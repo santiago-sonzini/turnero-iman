@@ -1,0 +1,10 @@
+{
+  "negocio": "Distribuidora Higiene Total (proveedor demo)",
+  "products": [
+    { "code": "demo-lavado-1", "name": "Jabón líquido ropa 3 L", "price": 5020 },
+    { "code": "demo-hogar-5", "name": "Detergente concentrado 750 ml", "price": 1330 },
+    { "code": "demo-papeles-12", "name": "Papel higiénico 4 rollos", "price": 1920 },
+    { "code": "demo-quimicos-16", "name": "Lavandina 2 L", "price": 1100 },
+    { "code": "demo-quimicos-18", "name": "Insecticida aerosol", "price": 3180 }
+  ]
+}

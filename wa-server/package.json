@@ -1,0 +1,15 @@
+{
+  "name": "iman-wa-server",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Servidor opcional de WhatsApp para Imán (Baileys, sin Chromium). Proceso persistente, no serverless.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.0",
+    "pino": "^9.0.0",
+    "qrcode": "^1.5.4"
+  }
+}

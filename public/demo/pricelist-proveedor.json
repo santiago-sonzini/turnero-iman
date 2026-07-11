@@ -1,0 +1,10 @@
+{
+  "negocio": "Mayorista Central (proveedor demo)",
+  "products": [
+    { "code": "demo-bebidas-1", "name": "Coca-Cola 2,25 L pack x8", "price": 20000 },
+    { "code": "demo-bebidas-2", "name": "Cerveza Quilmes 1 L pack x6", "price": 16200 },
+    { "code": "demo-bebidas-4", "name": "Fernet Branca 750 ml", "price": 24500 },
+    { "code": "demo-almacen-10", "name": "Aceite girasol 1,5 L pack x6", "price": 21000 },
+    { "code": "demo-almacen-13", "name": "Yerba Playadito 1 kg pack x5", "price": 26000 }
+  ]
+}
