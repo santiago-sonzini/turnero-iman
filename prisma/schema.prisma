@@ -1,568 +1,258 @@
-// This is your Prisma schema file
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
 }
 
-
-
 datasource db {
-  provider = "postgresql" // or "mysql", "sqlite", etc.
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
-
 }
 
 enum Role {
   ADMIN
-  CLIENT
 }
-
-// ── Multi-tenancy ────────────────────────────────────────────────────────────
-// Aislamiento elegido: base compartida + tenantId por fila, inyectado en un
-// único choke point (src/server/db.ts). Ver README "Multi-tenancy".
-
 enum PlanTier {
-  SIMPLE        // ARS 10.000/mes: import IA + inteligencia de clientes + WhatsApp
-  COMPLETO      // ARS 30.000/mes: todo Simple + recibos + productos/precios + sync
-  PERSONALIZADO // canal distribuidoras: sin checkout self-serve, se activa a mano
+  TURNOS
+  TURNOS_AUTO
 }
-
 enum SubscriptionStatus {
-  ONBOARDING // creó la cuenta, todavía no eligió plan (está en el onboarding)
-  TRIALING   // eligió plan, prueba gratis corriendo
-  ACTIVE     // suscripción MP autorizada y al día
-  PAST_DUE   // último débito rechazado: banner + período de gracia
-  CANCELLED  // suscripción cancelada: features pagas bloqueadas, datos intactos
+  ONBOARDING
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+enum AppointmentStatus {
+  CONFIRMADO
+  ASISTIO
+  NO_VINO
+  CANCELADO
+}
+enum BookingChannel {
+  OWNER
+  PUBLIC
+  PROMO
+}
+enum PromotionKind {
+  ADD_ON
+  DESCUENTO
+  PRECIO_FIJO
+}
+enum MessageKind {
+  CONFIRMACION
+  RECORDATORIO
+  CICLO
+  HUECO
+}
+enum MessageStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  FALLBACK
+}
+enum WhatsappHealth {
+  DISCONNECTED
+  QR_PENDING
+  CONNECTED
+  DEGRADED
+  BANNED
 }
 
-// La organización/negocio dueño de sus datos. Todo modelo de dominio cuelga
-// de acá vía tenantId.
 model Tenant {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique // reservado para subdominios / links públicos
+  id String @id @default(cuid())
+  name String
+  slug String @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  // ── Plan y suscripción (Mercado Pago preapproval) ─────────────────────────
-  plan            PlanTier?
-  planStatus      SubscriptionStatus @default(ONBOARDING)
-  trialEndsAt     DateTime?
-  graceUntil      DateTime? // PAST_DUE: hasta cuándo sigue operando antes del lock
-  mpPreapprovalId String?   @unique // id de la suscripción en MP
-  mpPayerEmail    String?
+  plan PlanTier?
+  planStatus SubscriptionStatus @default(ONBOARDING)
+  trialEndsAt DateTime?
+  graceUntil DateTime?
+  mpPreapprovalId String? @unique
+  mpPayerEmail String?
   mpLastPaymentAt DateTime?
-  // Add-ons pagos futuros (ej: "arca" = facturación electrónica ARCA sobre
-  // Plan COMPLETO, con su propio precio recurrente). Hoy ninguno está
-  // implementado; el gate ya los lee (src/server/plans.ts).
-  addons          String[]  @default([])
-
-  // ── Onboarding-first (valor antes del precio) ─────────────────────────────
-  // Paso persistido para retomar si abandona: importar | revelacion | plan | listo
-  onboardingStep String @default("importar")
-  // Snapshot del "aha" calculado sobre SUS datos (clientes en riesgo, top
-  // clientes, etc). La pantalla de precios lo usa para recomendar plan.
+  addons String[] @default([])
+  onboardingStep String @default("negocio")
   revealSnapshot Json?
-
-  // ── FUTURO canal distribuidora → comercios (NO construido, solo el gancho) ─
-  // Una distribuidora podrá regalar copias white-label a sus comercios con
-  // visibilidad opt-in del stock/rotación de SUS productos. Cuando llegue:
-  //   parentTenantId String?  +  relación self-relation Tenant→Tenant
-  //   (el equivalente actual entre deploys es BusinessProfile.partnerToken)
-  // Product.supplierLinked ya marca los productos elegibles.
-
-  users             User[]
-  clients           Client[]
-  payments          Payment[]
-  clientDiscounts   ClientDiscount[]
-  categories        Category[]
-  products          Product[]
-  offers            Offer[]
-  orders            Order[]
-  reorderAlerts     ReorderAlert[]
-  messageTemplates  MessageTemplate[]
-  contactLogs       ContactLog[]
-  businessProfiles  BusinessProfile[]
-  purchaseAnalytics PurchaseAnalytics[]
-  funnelEvents      FunnelEvent[]
-
+  whatsappRiskAcceptedAt DateTime?
+  whatsappRiskAcceptedBy String?
+  users User[]
+  profile BusinessProfile?
+  clients Client[]
+  services Service[]
+  workingHours WorkingHour[]
+  appointments Appointment[]
+  promotions Promotion[]
+  messageJobs MessageJob[]
+  whatsappSession WhatsappSession?
+  funnelEvents FunnelEvent[]
   @@index([planStatus])
 }
 
-// Eventos del funnel de onboarding/suscripción para medir drop-off:
-// cuenta_creada | datos_importados | resultado_revelado | plan_seleccionado |
-// suscripcion_iniciada | pago_aprobado ...
-model FunnelEvent {
-  id        String   @id @default(cuid())
-  tenantId  String   @default("")
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  event     String
-  props     Json?
+model User {
+  id String @id
+  email String @unique
+  phone String?
+  name String?
+  role Role @default(ADMIN)
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
-
-  @@index([event, createdAt])
+  updatedAt DateTime @updatedAt
   @@index([tenantId])
 }
 
-model User {
-  id         String   @id @default(cuid())
-  email      String   @unique
-  phone      String?
-  name       String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  adress     String?
+model BusinessProfile {
+  id String @id @default(cuid())
+  tenantId String @unique
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name String
+  description String?
+  address String?
+  phone String?
+  instagram String?
+  timezone String @default("America/Argentina/Buenos_Aires")
+  accent String @default("#E94F37")
+  bookingLeadMinutes Int @default(60)
+  bookingHorizonDays Int @default(30)
+  slotStepMinutes Int @default(15)
+  bufferMinutes Int @default(0)
+  depositsEnabled Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 
-  role       Role     @default(CLIENT)
+model Service {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name String
+  description String?
+  emoji String @default("✂️")
+  durationMinutes Int
+  priceCents Int
+  active Boolean @default(true)
+  sortOrder Int @default(0)
+  appointments Appointment[]
+  promotions Promotion[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, name])
+  @@index([tenantId, active])
+}
 
-  tenantId  String   @default("")
-  tenant     Tenant   @relation(fields: [tenantId], references: [id])
-
-  // Si el usuario es CLIENT, puede tener un Client asociado
-  clientId   String?
-  client     Client?   @relation(fields: [clientId], references: [id])
-
-  @@index([tenantId])
+model WorkingHour {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  weekday Int
+  startMinutes Int
+  endMinutes Int
+  active Boolean @default(true)
+  @@unique([tenantId, weekday, startMinutes])
+  @@index([tenantId, weekday])
 }
 
 model Client {
-  id            String   @id @default(cuid())
-  email         String?
-  phone         String?
-  name          String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  adress        String?
-  notes         String?
-  discount      Int      @default(0)
-  // Token del link de la cuenta pública liviana (se crea desde el dashboard).
-  accessToken   String?  @unique
-  discounts     ClientDiscount[]
-  orders        Order[]
-  reorderAlerts ReorderAlert[]
-  payments      Payment[]
-  contacts      ContactLog[]
-
-  tenantId  String   @default("")
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
-
-  // Rel inversa
-  user          User[]
-
-  @@unique([tenantId, name])
-  @@unique([tenantId, phone])
-  @@index([phone])
-  @@index([tenantId])
-}
-
-
-model Payment {
-  id            String   @id @default(cuid())
-  client        Client   @relation(fields: [clientId], references: [id])
-  clientId      String
-  paymentMethod String
-  amount        Float
-
-  orders         Order[]
-  // Detalle de cuánto aplicó este pago a cada orden (para revertir con exactitud).
-  allocations    PaymentAllocation[]
-
-  tenantId  String   @default("")
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@index([tenantId])
-}
-
-
-// Reparte un pago entre las órdenes que cancela. Permite recalcular el saldo
-// de cada orden y revertir un pago borrando sus asignaciones.
-// Scoping multi-tenant: SIN tenantId propio — hereda el del Payment/Order padre;
-// el choke point (src/server/db.ts) filtra por relación payment.tenantId.
-model PaymentAllocation {
-  id        String   @id @default(cuid())
-  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  paymentId String
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderId   String
-  amount    Float
-  createdAt DateTime @default(now())
-
-  @@index([paymentId])
-  @@index([orderId])
-}
-
-
-model ClientDiscount {
-  id            String   @id @default(cuid())
-  name          String
-  description   String?
-  discountType  DiscountType // PERCENTAGE or FIXED_AMOUNT
-  discountValue Float    // 20 for 20% or $20 off
-
-  // Validity
-  startDate     DateTime
-  endDate       DateTime
-  isActive      Boolean   @default(true)
-  clients       Client[]
-
-
-  // Conditions
-  minPurchaseAmount Int? // Minimum order amount required
-  maxUses         Int?      // Maximum number of times offer can be used
-  usedCount       Int       @default(0)
-
-  tenantId  String   @default("")
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
-
-  createdAt      DateTime  @default(now())
-
-  @@index([tenantId])
-}
-model Category {
-  id          String    @id @default(cuid())
-  name        String
-  slug        String
-  description String?
-  imageUrl    String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  offers      Offer[]
-  products    Product[]
-
-  tenantId  String   @default("")
-  tenant      Tenant   @relation(fields: [tenantId], references: [id])
-
-  @@unique([tenantId, slug])
-  @@index([slug])
-  @@index([tenantId])
-}
-
-model Product {
-  id                    String   @id @default(cuid())
-  name                  String
-  slug                  String
-  description           String?
-  price                 Float
-  cost                  Float   @default(0)
-  stock                 Int      @default(0)
-  imageUrl              String?
-  catalog                  String?
-  images                String[] // Array of image URLs
-
-  // Product consumption tracking
-  estimatedDurationDays Int?     // How many days product typically lasts (e.g., 30 for dog food)
-  unit                  String?  // "kg", "ml", "units", etc.
-  unitQuantity          Float?   // Quantity per unit (e.g., 15 for 15kg bag)
-
-  // Status
-  isActive              Boolean  @default(true)
-  isFeatured            Boolean  @default(false)
-
-  hasValidImage         Boolean  @default(true)
-
-  // Producto importado/gestionado por el proveedor (distribuidora). Elegible
-  // para actualización de precios desde su lista y para compartir stock.
-  // FUTURO canal tenant-a-tenant: este flag marca qué productos de un comercio
-  // serán visibles (opt-in) para su distribuidora madre.
-  supplierLinked        Boolean  @default(false)
-
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  categoryId            String?
-  category              Category? @relation(fields: [categoryId], references: [id])
-
-  tenantId  String   @default("")
-  tenant                Tenant   @relation(fields: [tenantId], references: [id])
-
-  orderItems            ProductInOrder[]
-  offers                Offer[]
-
-  @@unique([tenantId, slug])
-  @@index([slug])
-  @@index([categoryId])
-  @@index([isActive])
-  @@index([tenantId])
-}
-
-model Offer {
-  id              String    @id @default(cuid())
-  name            String
-  description     String?
-  discountType    DiscountType
-  discountValue   Float
-
-  imageUrl        String?
-
-  startDate       DateTime
-  endDate         DateTime
-  isActive        Boolean   @default(true)
-
-  minPurchaseAmount Float?
-  maxUses         Int?
-  usedCount       Int       @default(0)
-
-  isReorderOffer  Boolean   @default(false)
-
-  // NUEVO
-  scope           OfferScope // GLOBAL | PRODUCTS | CATEGORY
-
-  products        Product[]  // si scope = PRODUCTS
-  categoryId      String?    // si scope = CATEGORY
-  category        Category?  @relation(fields: [categoryId], references: [id])
-
-  tenantId  String   @default("")
-  tenant          Tenant   @relation(fields: [tenantId], references: [id])
-
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-
-  @@index([isActive, startDate, endDate])
-  @@index([tenantId])
-}
-
-enum OfferScope {
-  GLOBAL
-  PRODUCTS
-  CATEGORY
-}
-
-enum DiscountType {
-  PERCENTAGE
-  FIXED_AMOUNT
-}
-
-model Order {
-  id              String      @id @default(cuid())
-  orderNumber     String
-  status          OrderStatus @default(PENDING)
-
-  percentageofPayment Float @default(0)
-  profit            Float @default(0)
-  // Pricing
-  subtotal        Float
-  discount        Float      @default(0)
-  total           Float
-
-  payments        Payment[]
-  allocations     PaymentAllocation[]
-
-  // Payment
-  paymentMethod   String?
-  paymentStatus   PaymentStatus @default(PENDING)
-  paidAt          DateTime?
-
-  notes           String?
-
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  userId          String
-  client            Client        @relation(fields: [userId], references: [id])
-
-  tenantId  String   @default("")
-  tenant          Tenant   @relation(fields: [tenantId], references: [id])
-
-  products        ProductInOrder[]
-
-  @@unique([tenantId, orderNumber])
-  @@index([userId])
-  @@index([orderNumber])
-  @@index([status])
-  @@index([createdAt])
-  @@index([tenantId])
-}
-
-enum OrderStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  CANCELLED
-  REFUNDED
-}
-
-enum PaymentStatus {
-  PENDING
-  PAID
-  FAILED
-  REFUNDED
-}
-
-// Scoping multi-tenant: SIN tenantId propio — hereda el de la Order padre;
-// el choke point (src/server/db.ts) filtra por relación order.tenantId.
-model ProductInOrder {
-  id              String   @id @default(cuid())
-  quantity        Float
-  unitPrice       Float
-  discount        Float   @default(0)
-  subtotal        Float   // quantity * unitPrice
-  costAtPurchase  Float   @default(0) // cost to me at purchase
-  profit          Float   @default(0)
-
-  // Free-text name for unregistered ("custom") line items (productId == null)
-  customName      String?
-
-  // Consumption tracking for this specific purchase
-  purchaseDate    DateTime @default(now())
-  estimatedRunOutDate DateTime? // Calculated based on product duration
-  hasRunOut       Boolean  @default(false)
-  reorderSent     Boolean  @default(false) // Track if reorder alert was sent
-
-  createdAt       DateTime @default(now())
-
-  orderId         String
-  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  productId       String?
-  product         Product?  @relation(fields: [productId], references: [id], onDelete: Restrict)
-
-  index           Int      @default(0)
-
-  @@index([orderId])
-  @@index([productId])
-  @@index([estimatedRunOutDate])
-}
-
-model ReorderAlert {
-  id                String   @id @default(cuid())
-
-  // Alert details
-  productName       String
-  lastPurchaseDate  DateTime
-  estimatedRunOutDate DateTime
-
-  // Status
-  sentAt            DateTime?
-  wasOpened         Boolean  @default(false)
-  wasClicked        Boolean  @default(false)
-  resultedInOrder   Boolean  @default(false)
-
-  // WhatsApp message details
-  messageId         String?
-  messageStatus     String?  // sent, delivered, read, failed
-
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  userId            String
-  client              Client     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  tenantId  String   @default("")
-  tenant            Tenant   @relation(fields: [tenantId], references: [id])
-
-  productInOrderId  String?  // Reference to the original purchase
-
-  @@index([userId])
-  @@index([estimatedRunOutDate])
-  @@index([sentAt])
-  @@index([tenantId])
-}
-
-// ── Imán: seguimiento de contactos y recupero ──────────────────────────────
-
-// Plantillas de mensajes de WhatsApp con variables {nombre} {negocio} {dias}
-// {ultima_compra} {producto} {precio}
-model MessageTemplate {
-  id        String   @id @default(cuid())
-  name      String
-  situation String?  // "Para clientes dormidos o perdidos"
-  text      String
-  imageUrl  String?  // flyer opcional (ej: promo 2x1) que acompaña el mensaje
-  isDefault Boolean  @default(false)
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  phone String
+  name String
+  email String?
+  notes String?
+  expectedCycleDays Int?
+  marketingConsent Boolean @default(false)
+  appointments Appointment[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  tenantId  String   @default("")
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-
-  contacts  ContactLog[]
-
-  @@index([tenantId])
+  @@unique([tenantId, phone])
+  @@index([tenantId, name])
 }
 
-// Registro de cada contacto enviado a un cliente (nada automático: se loguea
-// cuando el usuario abre el link de WhatsApp)
-model ContactLog {
-  id           String   @id @default(cuid())
-  clientId     String
-  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  templateId   String?
-  template     MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  templateName String   // denormalizado: sobrevive a edición/borrado de la plantilla
-  message      String
-  // Estado del cliente al momento del envío (activo|riesgo|dormido|perdido).
-  // Clave para atribuir recuperos: solo cuentan contactos en estado no-activo.
-  statusAtSend String
-  channel      String   @default("whatsapp") // whatsapp (wa.me) | whatsapp-server (open-wa)
-  mediaUrl     String?  // imagen enviada junto al mensaje, si hubo
-  sentAt       DateTime @default(now())
-
-  tenantId  String   @default("")
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
-
-  @@index([clientId])
-  @@index([sentAt])
-  @@index([tenantId])
+model Appointment {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  serviceId String
+  service Service @relation(fields: [serviceId], references: [id])
+  clientId String
+  client Client @relation(fields: [clientId], references: [id])
+  startsAt DateTime @db.Timestamptz(3)
+  endsAt DateTime @db.Timestamptz(3)
+  status AppointmentStatus @default(CONFIRMADO)
+  channel BookingChannel @default(OWNER)
+  notes String?
+  depositRequired Boolean @default(false)
+  depositAmountCents Int?
+  depositStatus String?
+  promotionId String?
+  promotion Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tenantId, startsAt])
+  @@index([tenantId, clientId, status])
 }
 
-// Perfil del negocio de un tenant (branding, CUIT, márgenes, conexión partner).
-// Una fila por tenant.
-model BusinessProfile {
-  id          String   @id @default(cuid())
-  name        String
-  phone       String?
-  cuit        String?
-  address     String?
-  logoUrl     String?
-  themeAccent String?  // override opcional del color de acento del deploy
-
-  // ── Conexión partner por URL (distribuidora ↔ comercio) ──────────────────
-  // Conexión entre negocios por HTTP + token, opt-in de los dos lados.
-  // FUTURO canal tenant-a-tenant: cuando ambos negocios vivan en esta misma
-  // base, esto se reemplaza por la relación Tenant→Tenant (ver model Tenant).
-  partnerToken          String?  // secreto para autenticar pedidos entrantes a ESTE negocio
-  shareStockEnabled     Boolean  @default(false) // el comercio expone su stock
-  sharePricelistEnabled Boolean  @default(false) // la distribuidora expone su catálogo
-  supplierUrl           String?  // URL de lista de precios de mi distribuidora
-  supplierToken         String?  // token para autenticar contra esa URL
-
-  // Márgenes de ganancia por defecto: { categories: {categoryId: %}, catalogs: {catalog: %} }
-  margins     Json?
-
-  tenantId  String   @default("")   @unique
-  tenant      Tenant   @relation(fields: [tenantId], references: [id])
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model Promotion {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  serviceId String?
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  name String
+  kind PromotionKind @default(ADD_ON)
+  valueCents Int?
+  addOnLabel String?
+  message String
+  token String @unique @default(cuid())
+  expiresAt DateTime
+  active Boolean @default(true)
+  appointments Appointment[]
+  createdAt DateTime @default(now())
+  @@index([tenantId, active, expiresAt])
 }
 
-// Analytics table for tracking user purchase patterns
-model PurchaseAnalytics {
-  id                  String   @id @default(cuid())
-  userId              String
-  productId           String
+model MessageJob {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind MessageKind
+  status MessageStatus @default(PENDING)
+  phone String
+  body String
+  scheduledAt DateTime
+  attempts Int @default(0)
+  nextAttemptAt DateTime?
+  lastError String?
+  sentAt DateTime?
+  idempotencyKey String @unique
+  createdAt DateTime @default(now())
+  @@index([status, scheduledAt])
+  @@index([tenantId, createdAt])
+}
 
-  // Purchase frequency
-  totalPurchases      Int      @default(1)
-  averageDaysBetween  Int?     // Average days between purchases
-  lastPurchaseDate    DateTime
+model WhatsappSession {
+  id String @id @default(cuid())
+  tenantId String @unique
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  health WhatsappHealth @default(DISCONNECTED)
+  phone String?
+  qrCode String?
+  lastSeenAt DateTime?
+  lastError String?
+  updatedAt DateTime @updatedAt
+}
 
-  // Predicted next purchase
-  nextPredictedPurchase DateTime?
-
-  tenantId  String   @default("")
-  tenant              Tenant   @relation(fields: [tenantId], references: [id])
-
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  @@unique([userId, productId])
-  @@index([userId])
-  @@index([nextPredictedPurchase])
+model FunnelEvent {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event String
+  props Json?
+  createdAt DateTime @default(now())
+  @@index([event, createdAt])
   @@index([tenantId])
 }

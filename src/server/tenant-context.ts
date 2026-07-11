@@ -7,10 +7,9 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 import { env } from "@/env";
 import { systemDb, DEMO_MODE } from "./db";
-import { DEMO_TENANT_ID } from "./demo/packs/ids";
 import type { Tenant } from "@prisma/client";
 
-export { DEMO_TENANT_ID };
+export const DEMO_TENANT_ID = "demo-barberia-el-roble";
 
 export class TenantError extends Error {
   constructor(mensaje: string) {
@@ -40,7 +39,7 @@ function supabaseServer() {
  * devuelve datos de otro tenant.
  */
 export const getTenantId = cache(async (): Promise<string> => {
-  if (DEMO_MODE || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+  if (DEMO_MODE) {
     return DEMO_TENANT_ID;
   }
   const supabase = supabaseServer();

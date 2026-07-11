@@ -7,7 +7,6 @@ import { getUser } from './users';
 import { db, DEMO_MODE, systemDb } from '@/server/db';
 import { createClientServer } from '@/lib/user';
 import { trackFor } from '@/server/track';
-import { DEFAULT_PLANTILLAS } from '@/server/iman/default-templates';
 
 export async function login(values: any) {
   // Modo demo: sin Supabase configurado no hay login real.
@@ -25,12 +24,11 @@ export async function login(values: any) {
   if (data) {
     const res = await getUser(data.user.id)
     if (res.status === 200) {
-      if (res.data.role !== "ADMIN") redirect("/productos")
       // Dueño de negocio: si dejó el onboarding a la mitad, retoma donde estaba.
       const tenant = await systemDb.tenant.findUnique({
         where: { id: res.data.tenantId },
       })
-      redirect(tenant?.planStatus === "ONBOARDING" ? "/onboarding" : "/dashboard")
+      redirect(tenant?.planStatus === "ONBOARDING" ? "/onboarding" : "/app")
     } else {
       return { status: 401, message: "Error al recuperar usuario" }
     }
@@ -87,7 +85,7 @@ export async function signup(values: {
         name: values.negocio,
         slug: slugDe(values.negocio),
         planStatus: "ONBOARDING",
-        onboardingStep: "importar",
+        onboardingStep: "negocio",
       },
     })
     await systemDb.user.create({
@@ -102,11 +100,6 @@ export async function signup(values: {
     await systemDb.businessProfile.create({
       data: { name: values.negocio, tenantId: tenant.id },
     })
-    for (const t of DEFAULT_PLANTILLAS) {
-      await systemDb.messageTemplate.create({
-        data: { ...t, tenantId: tenant.id },
-      })
-    }
     await trackFor(tenant.id, "cuenta_creada", { email: values.email })
   }
 

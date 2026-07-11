@@ -1,5 +1,4 @@
 "use server"
-import { Phone } from "lucide-react";
 import nodemailer from "nodemailer";
 
 export async function sendEmail({ to, subject, html }: { to: string; subject: string; html: string }) {
@@ -14,7 +13,7 @@ export async function sendEmail({ to, subject, html }: { to: string; subject: st
   });
 
   await transporter.sendMail({
-    from: `"Tu tienda" <${process.env.SMTP_USER}>`,
+    from: `"Imán Turnos" <${process.env.SMTP_USER}>`,
     to,
     subject,
     html,

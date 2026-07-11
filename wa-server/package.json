@@ -1,15 +1,9 @@
 {
-  "name": "iman-wa-server",
-  "version": "0.2.0",
+  "name": "iman-turnos-open-wa-worker",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Servidor opcional de WhatsApp para Imán (Baileys, sin Chromium). Proceso persistente, no serverless.",
-  "scripts": {
-    "start": "node server.mjs"
-  },
-  "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.0",
-    "pino": "^9.0.0",
-    "qrcode": "^1.5.4"
-  }
+  "description": "Worker open-wa aislado para Turnos Auto",
+  "scripts": { "start": "node server.mjs" },
+  "dependencies": { "@open-wa/wa-automate": "^4.76.0" }
 }

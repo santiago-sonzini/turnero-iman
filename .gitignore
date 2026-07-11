@@ -41,6 +41,7 @@ public/uploads/
 # Sesión del servidor de WhatsApp (Baileys)
 wa-server/node_modules/
 wa-server/auth/
+wa-server/sessions/
 wa-server/_IGNORE_*/
 wa-server/package-lock.json
 .env*

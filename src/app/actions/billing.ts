@@ -53,11 +53,6 @@ export async function elegirPlan(
   });
   await track("plan_seleccionado", { plan: tier });
 
-  // Personalizado: sin checkout self-serve. Corre el trial de 14 días como
-  // ventana para conversar; al cerrar el acuerdo se activa a mano
-  // (planStatus ACTIVE sin suscripción MP).
-  if (tier === "PERSONALIZADO") return { ok: true, initPoint: null };
-
   if (!opciones?.conPago || !mpConfigurado() || DEMO_MODE) {
     return { ok: true, initPoint: null };
   }
@@ -68,8 +63,7 @@ export async function elegirPlan(
 /** Crea (o recupera) la preapproval y devuelve el init_point de MP. */
 export async function activarPago(): Promise<ResultadoPlan> {
   const tenant = await getCurrentTenant();
-  if (!tenant.plan || tenant.plan === "PERSONALIZADO")
-    return { ok: false, error: "Este plan no se paga online." };
+  if (!tenant.plan) return { ok: false, error: "Elegí un plan primero." };
   if (!mpConfigurado())
     return { ok: false, error: "Mercado Pago no está configurado todavía." };
 
@@ -136,9 +130,6 @@ async function crearPreapprovalParaTenant(
 export async function cambiarPlan(nuevo: PlanTier): Promise<ResultadoPlan> {
   const tenant = await getCurrentTenant();
   const plan = PLANES[nuevo];
-
-  if (nuevo === "PERSONALIZADO")
-    return { ok: false, error: "Personalizado se gestiona con nosotros." };
 
   if (tenant.mpPreapprovalId && plan.precioArs && mpConfigurado()) {
     try {
