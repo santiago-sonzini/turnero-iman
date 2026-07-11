@@ -2,6 +2,8 @@ import Providers from "@/components/layout/providers";
 import { Toaster } from "@/components/ui/toaster";
 import "@/styles/globals.css";
 import "@/styles/month.css";
+import "@/styles/auth.css";
+import "@/styles/landing.css";
 
 import { type Metadata } from "next";
 import NextTopLoader from 'nextjs-toploader';
