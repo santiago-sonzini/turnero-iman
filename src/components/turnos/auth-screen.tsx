@@ -45,7 +45,7 @@ export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
           <h1>{mode === "signup" ? "Mañana, tus clientes reservan solos." : "Qué bueno verte de nuevo."}</h1>
           <p className="auth-lead">Turnos online, clientes que vuelven y cada hueco convertido en una oportunidad.</p>
           <ul className="auth-benefits">
-            <li><Check /> 14 días gratis, sin tarjeta</li>
+            <li><Check /> 7 días gratis, sin tarjeta</li>
             <li><Check /> Configuración en menos de 3 minutos</li>
             <li><Check /> Tu página con tu marca y tu color</li>
           </ul>

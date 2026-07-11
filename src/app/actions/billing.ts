@@ -23,7 +23,7 @@ export type ResultadoPlan =
 
 /**
  * Selección de plan al final del onboarding (o cambio desde /suscripcion).
- * Arranca el trial de 14 días y, si MP está configurado y el usuario quiere
+ * Arranca el trial de 7 días y, si MP está configurado y el usuario quiere
  * dejar el débito listo, crea la preapproval y devuelve el init_point para
  * redirigir a Mercado Pago (el primer cobro es al terminar el trial).
  */

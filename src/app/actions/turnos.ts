@@ -132,7 +132,15 @@ export async function saveService(input: { id?: string; name: string; emoji: str
   const tenant = await getCurrentTenant();
   if (tenant.planStatus !== "ONBOARDING") await requireFeature("turnos");
   if (input.id) await db.service.update({ where: { id: input.id }, data: input });
-  else await db.service.create({ data: { ...input, active: input.active ?? true } as any });
+  else if (tenant.planStatus === "ONBOARDING") {
+    // Idempotente: si el navegador se cerró después de guardar, reintentar el
+    // paso actualiza el mismo servicio en vez de chocar con el nombre único.
+    await systemDb.service.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name: input.name } },
+      update: { ...input, active: input.active ?? true },
+      create: { tenantId: tenant.id, ...input, active: input.active ?? true },
+    });
+  } else await db.service.create({ data: { ...input, active: input.active ?? true } as any });
   revalidatePath("/app");
 }
 
@@ -145,6 +153,13 @@ export async function saveProfile(input: { name: string; phone?: string; address
 
 export async function ensureDefaultWorkingHours() {
   await db.workingHour.createMany({ data: [1,2,3,4,5,6].map((weekday) => ({ weekday, startMinutes: 600, endMinutes: weekday === 6 ? 1080 : 1200, active: true })) as any, skipDuplicates: true });
+}
+
+export async function saveOnboardingStep(step: "negocio" | "servicio" | "plan") {
+  const tenant = await getCurrentTenant();
+  if (tenant.planStatus !== "ONBOARDING") return;
+  await db.tenant.update({ where: { id: tenant.id }, data: { onboardingStep: step } });
+  revalidatePath("/onboarding");
 }
 
 export async function createPromotion(input: { serviceId?: string; name: string; addOnLabel: string; message: string; expiresAt: Date }) {

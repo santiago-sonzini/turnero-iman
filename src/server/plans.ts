@@ -1,6 +1,6 @@
 import type { PlanTier, Tenant } from "@prisma/client";
 
-export const DIAS_TRIAL = 14;
+export const DIAS_TRIAL = 7;
 export const DIAS_GRACIA = 7;
 export type FeatureKey = "turnos" | "clientes" | "promos" | "wa_links" | "email" | "whatsapp_auto";
 export type PlanDef = { tier: PlanTier; nombre: string; descripcion: string; precioArs: number; features: FeatureKey[]; destacado?: boolean };

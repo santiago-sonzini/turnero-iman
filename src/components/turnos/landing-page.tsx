@@ -28,7 +28,7 @@ export function LandingPage() {
           <h1>Tu agenda llena, sin perseguir a nadie.</h1>
           <p className="landing-sub">Imán Turnos te muestra cada hueco del día y qué cliente tuyo ya está para volver. Un toque, sale el WhatsApp, hueco lleno.</p>
           <div className="landing-actions"><Link className="landing-button primary" href="/auth?modo=signup">Probalo gratis <ArrowRight /></Link><a className="landing-button whatsapp" href={whatsapp} target="_blank"><MessageCircle /> Hablanos por WhatsApp</a></div>
-          <p className="landing-micro">14 días gratis · sin tarjeta · listo en 3 minutos</p>
+          <p className="landing-micro">7 días gratis · sin tarjeta · listo en 3 minutos</p>
         </div>
         <HeroDemo step={demoStep} />
       </div>
@@ -46,7 +46,7 @@ export function LandingPage() {
 
     <section className="landing-section alternate"><div className="landing-wrap landing-showcase reverse"><div><p className="landing-kicker">PROMOS CON SENTIDO</p><h2>Huecos que se venden solos</h2><p className="landing-copy">¿Un hueco a las 18:00 sin vender? Colgale un incentivo: <b>lavado gratis si lo reservan en los próximos 30 minutos</b>. Vos ponés el premio, Imán pone la urgencia.</p><p className="landing-copy">También armás promos en 3 toques y las mandás a quienes ya les toca volver.</p></div><div className="landing-incentive"><span className="landing-ping" /><h3>🎁 Lavado + peinado <em>GRATIS</em></h3><p>Reservá este hueco en los próximos 30 minutos y el lavado va de regalo.</p><div><Clock3 /><b>{countdown}</b><span>para que sea tuyo</span></div></div></div></section>
 
-    <section className="landing-section" id="precio"><div className="landing-wrap landing-price-wrap"><p className="landing-kicker centered">PRECIOS EN PESOS</p><h2 className="centered">Un precio que se paga solo</h2><div className="landing-prices"><PriceCard name="Turnos" price="15.000" copy="Un corte recuperado por semana y ya está pago." items={["Turnos ilimitados","Página de reservas con tu marca","Clientes que ya están para volver","Promos e incentivos","WhatsApp listo para enviar"]}/><PriceCard featured name="Turnos Auto" price="25.000" copy="Tu agenda también trabaja cuando vos no mirás." items={["Todo el plan Turnos","Confirmaciones automáticas","Recordatorios de turnos","Mensajes por ciclo vencido","Cola con ritmo humano y fallback"]}/></div><div className="landing-guarantee"><span>🤝</span><div><b>14 días para probarlo en serio.</b><p>Sin tarjeta. Tus datos son tuyos y cancelás cuando quieras.</p></div></div></div></section>
+    <section className="landing-section" id="precio"><div className="landing-wrap landing-price-wrap"><p className="landing-kicker centered">PRECIOS EN PESOS</p><h2 className="centered">Un precio que se paga solo</h2><div className="landing-prices"><PriceCard name="Turnos" price="15.000" copy="Un corte recuperado por semana y ya está pago." items={["Turnos ilimitados","Página de reservas con tu marca","Clientes que ya están para volver","Promos e incentivos","WhatsApp listo para enviar"]}/><PriceCard featured name="Turnos Auto" price="25.000" copy="Tu agenda también trabaja cuando vos no mirás." items={["Todo el plan Turnos","Confirmaciones automáticas","Recordatorios de turnos","Mensajes por ciclo vencido","Cola con ritmo humano y fallback"]}/></div><div className="landing-guarantee"><span>🤝</span><div><b>7 días para probarlo en serio.</b><p>Sin tarjeta. Tus datos son tuyos y cancelás cuando quieras.</p></div></div></div></section>
 
     <section className="landing-section alternate"><div className="landing-wrap landing-faq"><p className="landing-kicker">SIN LETRA CHICA</p><h2>Preguntas de barbero</h2>{[
       ["¿Cuánto sale?","Turnos cuesta $ 15.000 por mes y Turnos Auto $ 25.000. En pesos, sin costo por turno ni sorpresas en dólares."],
@@ -59,7 +59,7 @@ export function LandingPage() {
 
     <section className="landing-close"><div className="landing-wrap"><MagnetLogo particles /><h2>Mañana a esta hora, tu link ya está en tu bio.</h2><div className="landing-actions centered-actions"><Link className="landing-button primary" href="/auth?modo=signup">Probalo gratis <ArrowRight /></Link><a className="landing-button whatsapp" href={whatsapp} target="_blank"><MessageCircle /> Hablanos</a></div></div></section>
     <footer className="landing-footer"><div className="landing-wrap"><b>Imán Turnos</b><span>Hecho en Córdoba para negocios que atienden personas.</span><Link href="/auth">Ingresar</Link></div></footer>
-    <div className="landing-sticky"><Link className="landing-button primary" href="/auth?modo=signup">Probar 14 días gratis <ArrowRight /></Link></div>
+    <div className="landing-sticky"><Link className="landing-button primary" href="/auth?modo=signup">Probar 7 días gratis <ArrowRight /></Link></div>
   </main>;
 }
 
