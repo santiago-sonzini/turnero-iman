@@ -127,7 +127,10 @@ export async function setAppointmentStatus(id: string, status: "CONFIRMADO" | "A
 }
 
 export async function saveService(input: { id?: string; name: string; emoji: string; durationMinutes: number; priceCents: number; active?: boolean }) {
-  await requireFeature("turnos");
+  // El primer servicio se crea antes de elegir el plan, dentro del onboarding.
+  // Una vez operativo, vuelve a regir el gate normal de la suscripción.
+  const tenant = await getCurrentTenant();
+  if (tenant.planStatus !== "ONBOARDING") await requireFeature("turnos");
   if (input.id) await db.service.update({ where: { id: input.id }, data: input });
   else await db.service.create({ data: { ...input, active: input.active ?? true } as any });
   revalidatePath("/app");
