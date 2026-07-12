@@ -134,6 +134,8 @@ model BusinessProfile {
   slotStepMinutes Int @default(15)
   bufferMinutes Int @default(0)
   depositsEnabled Boolean @default(false)
+  notifyOnBooking Boolean @default(false)
+  notifyEmail String?
   showPrices Boolean @default(true)
   vacations Json?
   cancelWindowHours Int @default(48)

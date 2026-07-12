@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarPlus, Check, Clock3, MapPin, MessageCircle } from "lucide-react";
+import { ArrowLeft, CalendarPlus, Check, Clock3, MapPin, MessageCircle, X } from "lucide-react";
 import { bookPublic, cancelPublicAppointment } from "@/app/actions/turnos";
 import { computeSlots, isVacation } from "@/lib/availability";
 import { MagnetLogo } from "./magnet-logo";
@@ -19,6 +19,8 @@ export function BookingFlow({ initial, promoToken }: { initial: any; promoToken?
   const [result, setResult] = useState<any>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
   const [marketingConsent, setMarketingConsent] = useState(true);
+  const [cancelStep, setCancelStep] = useState<"idle" | "confirm" | "done">("idle");
+  const [cancelErr, setCancelErr] = useState("");
 
   const showPrices = initial.profile.showPrices !== false;
   const vacations = initial.profile.vacations ?? [];
@@ -38,6 +40,21 @@ export function BookingFlow({ initial, promoToken }: { initial: any; promoToken?
     const r = await bookPublic({ slug: initial.tenant.slug, serviceId: service.id, date, time, ...form, marketingConsent, promoToken });
     setResult(r);
     if (r.ok) { setStep(3); window.scrollTo({ top: 0 }); }
+  });
+
+  // ¿Se puede cancelar online el turno recién reservado? (misma regla que la
+  // ventana del negocio; si no, queda "Escribir al negocio").
+  const cancelable = useMemo(() => {
+    const wh = initial.profile.cancelWindowHours ?? 48;
+    if (wh <= 0 || !date || !time) return false;
+    return new Date(`${date}T${time}:00-03:00`).getTime() - wh * 3_600_000 > Date.now();
+  }, [initial.profile.cancelWindowHours, date, time]);
+
+  const cancelBooking = () => start(async () => {
+    setCancelErr("");
+    const r = await cancelPublicAppointment(initial.tenant.slug, result?.appointmentId);
+    if (!r.ok) { setCancelErr(r.error); setCancelStep("idle"); return; }
+    setCancelStep("done");
   });
 
   const prettyDate = date ? new Date(`${date}T12:00:00-03:00`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" }) : "";
@@ -151,28 +168,47 @@ export function BookingFlow({ initial, promoToken }: { initial: any; promoToken?
     </section>}
 
     {step === 3 && <section className="bk-ok">
-      <div className="confeti" aria-hidden="true">
+      {cancelStep !== "done" && <div className="confeti" aria-hidden="true">
         {Array.from({ length: 26 }, (_, i) => <i key={i} style={{
           left: `${(i * 37) % 100}%`,
           background: CONFETI[i % CONFETI.length],
           animationDuration: `${2.2 + ((i * 13) % 10) / 6}s`,
           animationDelay: `${((i * 7) % 12) / 10}s`,
         }} />)}
-      </div>
-      <div className="marca-ok"><Check strokeWidth={3} /></div>
-      <h1>¡Turno confirmado!</h1>
-      <p className="sub">{prettyDate} · {time} hs</p>
-      <div className="resumen">
-        <div className="r-fila"><span className="k">Servicio</span><span className="v">{service.emoji} {service.name}</span></div>
-        {(initial.profile.address || initial.profile.mapsUrl) && <div className="r-fila"><span className="k">Dónde</span><span className="v">{initial.profile.mapsUrl
-          ? <a href={initial.profile.mapsUrl} target="_blank" rel="noopener noreferrer" className="meta-link">{initial.profile.address || "Ver en Maps"}</a>
-          : initial.profile.address}</span></div>}
-        {showPrices && <div className="r-fila r-total"><span className="k">Total</span><span className="v">{money(service.priceCents)}</span></div>}
-      </div>
-      <div className="bk-ok-acciones">
-        <button className="btn btn-acento block" onClick={addToCalendar}><CalendarPlus /> Agregar a calendario</button>
-        {initial.profile.phone && <a className="btn btn-wa block" href={`https://wa.me/54${initial.profile.phone.replace(/\D/g, "")}`} target="_blank"><MessageCircle /> Escribir al negocio</a>}
-      </div>
+      </div>}
+      {cancelStep === "done" ? <>
+        <div className="marca-ok cancelado"><X strokeWidth={3} /></div>
+        <h1>Turno cancelado</h1>
+        <p className="sub">Liberaste tu lugar. Podés reservar otro cuando quieras.</p>
+        <div className="bk-ok-acciones">
+          <button className="btn btn-acento block" onClick={() => { setService(null); setDate(""); setTime(""); setResult(null); setCancelStep("idle"); setStep(0); window.scrollTo({ top: 0 }); }}>Reservar otro turno</button>
+        </div>
+      </> : <>
+        <div className="marca-ok"><Check strokeWidth={3} /></div>
+        <h1>¡Turno confirmado!</h1>
+        <p className="sub">{prettyDate} · {time} hs</p>
+        <div className="resumen">
+          <div className="r-fila"><span className="k">Servicio</span><span className="v">{service.emoji} {service.name}</span></div>
+          {(initial.profile.address || initial.profile.mapsUrl) && <div className="r-fila"><span className="k">Dónde</span><span className="v">{initial.profile.mapsUrl
+            ? <a href={initial.profile.mapsUrl} target="_blank" rel="noopener noreferrer" className="meta-link">{initial.profile.address || "Ver en Maps"}</a>
+            : initial.profile.address}</span></div>}
+          {showPrices && <div className="r-fila r-total"><span className="k">Total</span><span className="v">{money(service.priceCents)}</span></div>}
+        </div>
+        <div className="bk-ok-acciones">
+          <button className="btn btn-acento block" onClick={addToCalendar}><CalendarPlus /> Agregar a calendario</button>
+          {initial.profile.phone && <a className="btn btn-wa block" href={`https://wa.me/54${initial.profile.phone.replace(/\D/g, "")}`} target="_blank"><MessageCircle /> Escribir al negocio</a>}
+        </div>
+        {result?.appointmentId && cancelable && <div className="bk-ok-cancelar">
+          {cancelStep === "confirm"
+            ? <><p className="bk-cancel-q">¿Seguro que querés cancelar este turno?</p>
+                <div className="bk-cancel-row">
+                  <button className="btn btn-fantasma" disabled={saving} onClick={cancelBooking}>{saving ? "Cancelando…" : "Sí, cancelar"}</button>
+                  <button className="btn" disabled={saving} onClick={() => setCancelStep("idle")}>No</button>
+                </div></>
+            : <button className="bk-cancel-link" onClick={() => setCancelStep("confirm")}>Cancelar turno</button>}
+          {cancelErr && <p className="form-error" style={{ marginTop: 8 }}>{cancelErr}</p>}
+        </div>}
+      </>}
     </section>}
 
     <footer className="bk-foot">Reservas con <MagnetLogo /> <b>Imán Turnos</b></footer>

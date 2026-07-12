@@ -162,6 +162,38 @@ body::after{
   display:grid;place-items:center;transition:transform .16s var(--resorte),box-shadow .16s}
 .fab:active{transform:translateY(5px);box-shadow:0 0 0 var(--acento-osc)}
 .fab svg{width:28px;height:28px}
+/* FAB con texto ("+ Crear turno"): pastilla en vez de círculo */
+.fab.fab-txt{width:auto;height:auto;border-radius:999px;padding:14px 22px 14px 17px;gap:8px;
+  display:inline-flex;font-family:var(--display);font-weight:900;font-size:.98rem;white-space:nowrap}
+.fab.fab-txt svg{width:22px;height:22px}
+/* grilla de horarios (alta manual de turno) */
+.slot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:8px}
+.slot{border:var(--borde);border-radius:12px;background:var(--blanco);padding:10px 6px;font-weight:800;
+  font-size:.9rem;box-shadow:var(--sombra-dura);color:var(--tinta);cursor:pointer}
+.slot.on{background:var(--acento);color:var(--acento-on);border-color:var(--tinta)}
+/* acciones del header + botón copiar */
+.top-acciones{display:flex;align-items:center;gap:8px}
+.btn.icon-btn{width:42px;padding-left:0;padding-right:0}
+.btn.sm.icon-btn{width:38px}
+/* fila del link en el modal de compartir */
+.share-link{display:flex;align-items:center;gap:8px;border:var(--borde);border-radius:14px;
+  background:var(--crema);padding:7px 7px 7px 14px;margin-bottom:12px;box-shadow:var(--sombra-dura)}
+.share-link .url{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-weight:800;font-size:.9rem;color:var(--tinta)}
+/* toggle (avisos por email) */
+.switch-fila{display:flex;align-items:center;gap:12px;border:var(--borde);border-radius:16px;
+  background:var(--blanco);padding:14px;box-shadow:var(--sombra-dura);cursor:pointer}
+.switch-fila>div{flex:1}
+.switch-fila>div b{display:block;font-size:.92rem}
+.switch-fila>div small{color:var(--tinta-suave);font-size:.76rem;font-weight:600;line-height:1.4}
+.switch-fila input{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
+.switch{position:relative;flex:none;width:48px;height:28px;border:var(--borde);border-radius:999px;
+  background:var(--crema);box-shadow:var(--sombra-dura);transition:background .16s}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;
+  background:var(--tinta);transition:transform .16s}
+.switch-fila input:checked~.switch{background:var(--acento)}
+.switch-fila input:checked~.switch::after{transform:translateX(20px);background:#fff}
+.switch-fila input:focus-visible~.switch{outline:2px solid var(--acento);outline-offset:2px}
 
 /* ---------- agenda -------------------------------------------------------- */
 .fecha-nav{display:flex;align-items:center;gap:6px;justify-content:center;padding:14px 0 6px}
@@ -633,6 +665,12 @@ button.tarjeta-fila:active,a.tarjeta-fila:active{transform:translateY(2px)}
 .bk-ok .sub{color:var(--tinta-suave);font-weight:700;margin-bottom:20px}
 .bk-ok .resumen{text-align:left}
 .bk-ok-acciones{display:grid;gap:10px;margin-top:6px}
+.bk-ok .marca-ok.cancelado{background:var(--rojo);box-shadow:0 5px 0 #9c2a1e}
+.bk-ok-cancelar{margin-top:16px}
+.bk-cancel-link{border:0;background:none;color:var(--tinta-suave);font-weight:800;font-size:.84rem;
+  text-decoration:underline;text-underline-offset:3px;padding:6px;cursor:pointer}
+.bk-cancel-q{font-weight:800;font-size:.9rem;margin-bottom:10px}
+.bk-cancel-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .confeti{position:fixed;inset:0;pointer-events:none;z-index:40;overflow:hidden}
 .confeti i{position:absolute;top:-14px;width:10px;height:14px;border-radius:2px;animation:cae linear forwards}
 @keyframes cae{to{transform:translateY(104svh) rotate(680deg)}}

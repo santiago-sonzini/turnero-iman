@@ -21,6 +21,11 @@ export function LandingPage() {
   const countdown = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
   return <main className="landing">
+    <header className="landing-topbar">
+      <div className="landing-wrap">
+        <Link className="landing-login" href="/auth?modo=signin">Iniciar sesión <ArrowRight /></Link>
+      </div>
+    </header>
     <section className="landing-hero" id="inicio">
       <div className="landing-wrap landing-hero-grid">
         <div className="landing-hero-copy">

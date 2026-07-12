@@ -15,6 +15,44 @@ const phone = (value: string) => value.replace(/\D/g, "").replace(/^0+/, "");
 const horizonOf = (profile: { bookingHorizonDays: number }) => Math.min(90, Math.max(1, profile.bookingHorizonDays || 30));
 const clientCookie = (tenantId: string) => `iman_cli_${tenantId}`;
 const localDayAR = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+const MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const fmtFechaEmail = (d: string) => { const [, m, day] = d.split("-").map(Number); return `${day} de ${MESES_ES[(m ?? 1) - 1]}`; };
+
+// Manda los emails de una reserva (fuera del camino crítico). Confirmación al
+// cliente si dejó su email; aviso al dueño si activó las notificaciones —
+// independiente de si el cliente cargó o no su email.
+async function enviarEmailsReserva(a: {
+  tenant: { name: string; slug: string };
+  profile: { accent?: string; address?: string | null; notifyOnBooking?: boolean; notifyEmail?: string | null } | null;
+  service: { name: string };
+  clienteNombre: string; clienteEmail: string | null; telefono: string; date: string; time: string;
+}) {
+  try {
+    const { emailConfigurado, sendEmail } = await import("@/lib/mailer");
+    if (!(await emailConfigurado())) return;
+    const { emailConfirmacionCliente, emailAvisoTurnoAdmin } = await import("@/lib/emails");
+    const fecha = fmtFechaEmail(a.date);
+    const accent = a.profile?.accent;
+    const base = appUrl();
+    if (a.clienteEmail) {
+      const { subject, html } = emailConfirmacionCliente({
+        negocio: a.tenant.name, cliente: a.clienteNombre, servicio: a.service.name,
+        fecha, hora: a.time, direccion: a.profile?.address ?? null, accent,
+        url: `${base}/${a.tenant.slug}/turnos`,
+      });
+      await sendEmail({ to: a.clienteEmail, subject, html }).catch((e) => console.error("[email] confirmación cliente falló", e));
+    }
+    if (a.profile?.notifyOnBooking && a.profile?.notifyEmail) {
+      const { subject, html } = emailAvisoTurnoAdmin({
+        negocio: a.tenant.name, cliente: a.clienteNombre, telefono: a.telefono,
+        servicio: a.service.name, fecha, hora: a.time, accent, panelUrl: `${base}/app`,
+      });
+      await sendEmail({ to: a.profile.notifyEmail, subject, html }).catch((e) => console.error("[email] aviso dueño falló", e));
+    }
+  } catch (e) {
+    console.error("[email] reserva", e);
+  }
+}
 
 export async function getOwnerData(from: Date, to: Date) {
   const tenant = await getCurrentTenant();
@@ -59,7 +97,9 @@ export async function getPublicBooking(slug: string, promoToken?: string) {
   const misTurnos = returning
     ? { name: returning.name, appointments: returning.appointments }
     : null;
-  return { tenant, profile: tenant.profile, services, hours, busy, promo, horizonDays, misTurnos };
+  // No exponer los datos de notificación del dueño en la página pública.
+  const { notifyEmail, notifyOnBooking, ...profilePublico } = tenant.profile;
+  return { tenant, profile: profilePublico, services, hours, busy, promo, horizonDays, misTurnos };
 }
 
 export async function publicAvailability(slug: string, serviceId: string, date: string) {
@@ -143,21 +183,99 @@ export async function bookPublic(input: z.infer<typeof bookingSchema>) {
         scheduledAt: new Date(), idempotencyKey: `confirmation:${appointment.id}`,
       } });
     }
-    if (data.email && process.env.SMTP_USER && process.env.SMTP_PASS) {
-      // Fuera del camino crítico: el email es cortesía, la respuesta no lo espera.
-      void import("@/lib/mailer")
-        .then(({ sendEmail }) => sendEmail({
-          to: data.email!,
-          subject: `Turno confirmado en ${tenant.name}`,
-          html: `<h2>¡Tu turno está confirmado!</h2><p>${data.date.split("-").reverse().join("/")} a las ${data.time} — ${service.name}.</p>`,
-        }))
-        .catch((error) => console.error("[email] confirmación opcional falló", error));
-    }
+    // Fuera del camino crítico: la respuesta no espera a los emails.
+    void enviarEmailsReserva({
+      tenant, profile: tenant.profile, service,
+      clienteNombre: data.name, clienteEmail: data.email || null, telefono: phone(data.phone),
+      date: data.date, time: data.time,
+    });
     return { ok: true as const, appointmentId: appointment.id };
   } catch (error: any) {
     if (error?.code === "P2004" || String(error?.message).includes("appointment_no_overlap")) return { ok: false as const, error: "Ese horario acaba de ocuparse. Elegí otro." };
     console.error("[booking]", error);
     return { ok: false as const, error: "No pudimos guardar el turno. Probá otra vez." };
+  }
+}
+
+// Disponibilidad para el ALTA MANUAL del dueño: igual que la pública pero sin
+// el tope de anticipación (bookingLeadMinutes = 0), así puede cargar un turno
+// para ahora mismo (walk-in). Respeta horarios, buffer, vacaciones y ocupación.
+export async function ownerAvailability(serviceId: string, date: string): Promise<string[]> {
+  const tenant = await getCurrentTenant();
+  if (tenant.planStatus !== "ONBOARDING") await requireFeature("turnos");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+  const [service, profile, hours, busy] = await Promise.all([
+    db.service.findFirst({ where: { id: serviceId, active: true } }),
+    db.businessProfile.findFirst(),
+    db.workingHour.findMany({ where: { active: true } }),
+    db.appointment.findMany({
+      where: { status: { not: "CANCELADO" }, startsAt: { lte: localDate(date, 1439) }, endsAt: { gte: localDate(date, 0) } },
+      select: { startsAt: true, endsAt: true },
+    }),
+  ]);
+  if (!service || !profile) return [];
+  const vacations = (profile.vacations as Vacation[] | null) ?? null;
+  return computeSlots({ date, durationMinutes: service.durationMinutes, hours, busy, rules: { ...profile, bookingLeadMinutes: 0 }, vacations });
+}
+
+const manualBookingSchema = z.object({
+  serviceId: z.string().min(1),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  time: z.string().regex(/^\d{2}:\d{2}$/),
+  name: z.string().trim().min(2).max(80),
+  phone: z.string().min(6),
+});
+
+/**
+ * Alta MANUAL de un turno por el dueño (canal OWNER). Usa el mismo motor de
+ * disponibilidad race-safe que la página pública (sin el tope de anticipación)
+ * y NO toca cookies de cliente. Reutiliza/crea el cliente por teléfono.
+ */
+export async function crearTurnoManual(input: z.infer<typeof manualBookingSchema>) {
+  const parsed = manualBookingSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Revisá los datos del turno." };
+  const data = parsed.data;
+  const tenant = await getCurrentTenant();
+  if (tenant.planStatus !== "ONBOARDING") await requireFeature("turnos");
+  const [profile, service] = await Promise.all([
+    db.businessProfile.findFirst(),
+    db.service.findFirst({ where: { id: data.serviceId, active: true } }),
+  ]);
+  if (!profile) return { ok: false as const, error: "Configurá tu negocio primero." };
+  if (!service) return { ok: false as const, error: "Ese servicio ya no está disponible." };
+  const vacations = (profile.vacations as Vacation[] | null) ?? null;
+  if (isVacation(data.date, vacations)) return { ok: false as const, error: "Ese día el negocio no atiende." };
+  const [busy, hours] = await Promise.all([
+    db.appointment.findMany({
+      where: { status: { not: "CANCELADO" }, startsAt: { lte: localDate(data.date, 1439) }, endsAt: { gte: localDate(data.date, 0) } },
+      select: { startsAt: true, endsAt: true },
+    }),
+    db.workingHour.findMany({ where: { active: true } }),
+  ]);
+  const available = computeSlots({ date: data.date, durationMinutes: service.durationMinutes, hours, busy, rules: { ...profile, bookingLeadMinutes: 0 }, vacations });
+  if (!available.includes(data.time)) return { ok: false as const, error: "Ese horario está ocupado o fuera de agenda. Elegí otro." };
+  const [h = 0, m = 0] = data.time.split(":").map(Number);
+  const startsAt = localDate(data.date, h * 60 + m);
+  const endsAt = new Date(startsAt.getTime() + (service.durationMinutes + profile.bufferMinutes) * 60000);
+  try {
+    const appointment = await db.$transaction(async (tx) => {
+      const client = await tx.client.upsert({
+        where: { tenantId_phone: { tenantId: tenant.id, phone: phone(data.phone) } },
+        update: { name: data.name },
+        create: { tenantId: tenant.id, name: data.name, phone: phone(data.phone), accessToken: randomUUID() },
+      });
+      return tx.appointment.create({ data: {
+        tenantId: tenant.id, serviceId: service.id, clientId: client.id, startsAt, endsAt,
+        channel: "OWNER", depositRequired: false, depositStatus: "disabled",
+      } });
+    });
+    revalidatePath("/app");
+    revalidatePath(`/${tenant.slug}`);
+    return { ok: true as const, appointmentId: appointment.id };
+  } catch (error: any) {
+    if (error?.code === "P2004" || String(error?.message).includes("appointment_no_overlap")) return { ok: false as const, error: "Ese horario acaba de ocuparse. Elegí otro." };
+    console.error("[manual booking]", error);
+    return { ok: false as const, error: "No pudimos crear el turno. Probá de nuevo." };
   }
 }
 
@@ -189,6 +307,22 @@ export async function saveProfile(input: { name: string; phone?: string; address
   await db.businessProfile.upsert({ where: { tenantId: tenant.id }, update: input, create: { tenantId: tenant.id, ...input } });
   await db.tenant.update({ where: { id: tenant.id }, data: { name: input.name } });
   revalidatePath("/app");
+}
+
+// Aviso por email al dueño cada vez que entra una reserva (opt-in). Va al mail
+// que elija, sin importar si el cliente cargó o no el suyo.
+export async function saveNotifications(input: { notifyOnBooking: boolean; notifyEmail: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const tenant = await getCurrentTenant();
+  const email = input.notifyEmail.trim();
+  if (input.notifyOnBooking && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return { ok: false, error: "Poné un email válido para recibir los avisos." };
+  }
+  await db.businessProfile.update({
+    where: { tenantId: tenant.id },
+    data: { notifyOnBooking: input.notifyOnBooking, notifyEmail: email || null },
+  });
+  revalidatePath("/app");
+  return { ok: true };
 }
 
 // Ajustes de reservas: identificador de link, límite de agenda, mostrar

@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, LogOut, MessageCircle, Plus, Scissors, Settings, Sparkles, Trash2, Users, X } from "lucide-react";
-import { acceptWhatsappRisk, createPromotion, queueGapFill, saveBookingSettings, saveProfile, saveService, setAppointmentStatus } from "@/app/actions/turnos";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, LogOut, MessageCircle, Plus, Scissors, Settings, Share2, Sparkles, Trash2, Users, X } from "lucide-react";
+import { acceptWhatsappRisk, createPromotion, crearTurnoManual, ownerAvailability, queueGapFill, saveBookingSettings, saveNotifications, saveProfile, saveService, setAppointmentStatus } from "@/app/actions/turnos";
 import { signOut } from "@/app/actions/auth";
 import { MagnetLogo } from "./magnet-logo";
 import Image from "next/image";
@@ -35,7 +35,10 @@ export function AppShell({ data }: { data: any }) {
           <span><span style={{ display: "block", lineHeight: 1.15 }}>Imán</span><small>{data.profile?.name ?? data.tenant.name}</small></span>
         </button>
         <span className="top-sp" />
-        <a className="btn sm" href={`/${data.tenant.slug}/turnos`} target="_blank">Compartir <ExternalLink /></a>
+        <div className="top-acciones">
+          <button className="btn sm" onClick={() => setSheet({ type: "share" })}><Share2 /> Compartir</button>
+          <CopyLinkButton path={`/${data.tenant.slug}/turnos`} className="btn sm icon-btn" />
+        </div>
       </header>
 
       <main key={screen} className={`pantalla ${screen === "agenda" ? "con-fab" : ""}`}>
@@ -43,10 +46,10 @@ export function AppShell({ data }: { data: any }) {
         {screen === "clientes" && <Clients clients={data.clients} profile={data.profile} />}
         {screen === "promos" && <Promos promotions={data.promotions} slug={data.tenant.slug} onCreate={() => setSheet({ type: "promo" })} />}
         {screen === "servicios" && <Services services={data.services} hours={data.workingHours} onCreate={() => setSheet({ type: "service" })} />}
-        {screen === "ajustes" && <SettingsScreen data={data} onEdit={() => setSheet({ type: "profile" })} onWhatsapp={() => setSheet({ type: "whatsapp" })} onBooking={() => setSheet({ type: "booking" })} />}
+        {screen === "ajustes" && <SettingsScreen data={data} onEdit={() => setSheet({ type: "profile" })} onWhatsapp={() => setSheet({ type: "whatsapp" })} onBooking={() => setSheet({ type: "booking" })} onNotif={() => setSheet({ type: "notif" })} />}
       </main>
 
-      {screen === "agenda" && <button className="fab" aria-label="Agendar turno" onClick={() => setSheet({ type: "manual" })}><Plus /></button>}
+      {screen === "agenda" && <button className="fab fab-txt" aria-label="Crear turno" onClick={() => setSheet({ type: "manual" })}><Plus /> Crear turno</button>}
 
       <nav className="tabbar">
         <Tab active={screen === "agenda"} icon={<CalendarDays />} label="Agenda" onClick={() => nav("agenda")} />
@@ -64,7 +67,9 @@ export function AppShell({ data }: { data: any }) {
         {sheet.type === "profile" && <ProfileSheet close={close} profile={data.profile} />}
         {sheet.type === "whatsapp" && <WhatsappSheet close={close} qr={data.whatsapp?.qrCode} eligible={data.tenant.plan === "TURNOS_AUTO"} accepted={!!data.tenant.whatsappRiskAcceptedAt} />}
         {sheet.type === "booking" && <BookingSettingsSheet close={close} tenant={data.tenant} profile={data.profile} />}
-        {sheet.type === "manual" && <ManualSheet close={close} slug={data.tenant.slug} />}
+        {sheet.type === "manual" && <ManualSheet close={close} services={data.services} clients={data.clients} />}
+        {sheet.type === "share" && <ShareSheet close={close} slug={data.tenant.slug} name={data.profile?.name ?? data.tenant.name} />}
+        {sheet.type === "notif" && <NotificationsSheet close={close} profile={data.profile} />}
       </>}</Sheet>}
     </div>
   );
@@ -327,7 +332,7 @@ function Services({ services, hours, onCreate }: any) {
   </>;
 }
 
-function SettingsScreen({ data, onEdit, onWhatsapp, onBooking }: any) {
+function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif }: any) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [leaving, startLeaving] = useTransition();
@@ -348,6 +353,11 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking }: any) {
     <button className="tarjeta-fila" onClick={onBooking}>
       <span className="emo">🗓️</span>
       <div className="info"><span className="nom">Reservas y disponibilidad</span><span className="sub">Link, límite de días, precios y vacaciones</span></div>
+      <ChevronRight />
+    </button>
+    <button className="tarjeta-fila" onClick={onNotif}>
+      <span className="emo">📬</span>
+      <div className="info"><span className="nom">Avisos por email</span><span className="sub">{data.profile.notifyOnBooking ? `Activado · ${data.profile.notifyEmail ?? ""}` : "Recibí un mail por cada reserva"}</span></div>
       <ChevronRight />
     </button>
     <div className="seccion-tit"><h2>Tema de tu marca</h2>{pending && <span className="chip">Guardando…</span>}</div>
@@ -617,11 +627,142 @@ function BookingSettingsSheet({ tenant, profile, close }: any) {
   </>;
 }
 
-function ManualSheet({ slug, close }: any) {
+function ManualSheet({ services, clients, close }: any) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const activos = useMemo(() => services.filter((s: any) => s.active), [services]);
+  const [serviceId, setServiceId] = useState(activos[0]?.id ?? "");
+  const [date, setDate] = useState(() => localDay(new Date()));
+  const [time, setTime] = useState("");
+  const [slots, setSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [name, setName] = useState("");
+  const [tel, setTel] = useState("");
+  const [error, setError] = useState("");
+
+  // Recalcula horarios libres cada vez que cambia servicio o día.
+  useEffect(() => {
+    if (!serviceId || !date) { setSlots([]); return; }
+    let vivo = true;
+    setLoadingSlots(true); setTime("");
+    ownerAvailability(serviceId, date)
+      .then((s) => { if (vivo) setSlots(s); })
+      .catch(() => { if (vivo) setSlots([]); })
+      .finally(() => { if (vivo) setLoadingSlots(false); });
+    return () => { vivo = false; };
+  }, [serviceId, date]);
+
+  // Si el nombre coincide con un cliente existente, autocompleta su teléfono.
+  const pickName = (v: string) => {
+    setName(v);
+    const c = clients.find((c: any) => c.name === v);
+    if (c?.phone) setTel(c.phone);
+  };
+
+  const submit = () => {
+    setError("");
+    if (!serviceId) return setError("Elegí un servicio.");
+    if (!time) return setError("Elegí un horario.");
+    if (name.trim().length < 2) return setError("Poné el nombre del cliente.");
+    if (tel.replace(/\D/g, "").length < 6) return setError("Poné un WhatsApp válido.");
+    start(async () => {
+      const r = await crearTurnoManual({ serviceId, date, time, name, phone: tel });
+      if (!r.ok) { setError(r.error); return; }
+      router.refresh();
+      close();
+    });
+  };
+
   return <>
-    <SheetHead title="Agendalo desde disponibilidad" sub="La carga manual usa el mismo motor race-safe que tu página pública" onClose={close} />
+    <SheetHead title="Nuevo turno" sub="Cargalo a mano — mismo motor de disponibilidad que tu página pública" onClose={close} />
     <div className="sheet-body">
-      <a className="btn btn-acento block" href={`/${slug}/turnos`} target="_blank">Elegir servicio y horario <ExternalLink /></a>
+      <div className="campo"><span>Servicio</span>
+        <select value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
+          {activos.length === 0 && <option value="">Creá un servicio primero</option>}
+          {activos.map((s: any) => <option key={s.id} value={s.id}>{s.emoji} {s.name} · {s.durationMinutes} min</option>)}
+        </select>
+      </div>
+      <div className="campo"><span>Día</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+      <div className="campo"><span>Horario</span>
+        {loadingSlots
+          ? <p className="ayuda">Buscando horarios libres…</p>
+          : slots.length
+            ? <div className="slot-grid">{slots.map((s) => <button type="button" key={s} className={`slot ${time === s ? "on" : ""}`} onClick={() => setTime(s)}>{s}</button>)}</div>
+            : <p className="ayuda">No hay horarios libres ese día para este servicio.</p>}
+      </div>
+      <div className="campo"><span>Cliente</span>
+        <input value={name} onChange={(e) => pickName(e.target.value)} placeholder="Nombre y apellido" list="clientes-manual" />
+        <datalist id="clientes-manual">{clients.map((c: any) => <option key={c.id} value={c.name} />)}</datalist>
+      </div>
+      <div className="campo"><span>WhatsApp</span><input inputMode="tel" value={tel} onChange={(e) => setTel(e.target.value)} placeholder="351 555 0194" /></div>
+      {error && <p className="campo-error">{error}</p>}
+      <button className="btn btn-acento block" disabled={pending || !activos.length} onClick={submit}>{pending ? "Creando…" : "Crear turno"}</button>
+    </div>
+  </>;
+}
+
+function CopyLinkButton({ path, label, className }: { path: string; label?: string; className?: string }) {
+  const [done, setDone] = useState(false);
+  const copy = async () => {
+    const url = `${window.location.origin}${path}`;
+    try { await navigator.clipboard.writeText(url); }
+    catch {
+      const ta = document.createElement("textarea"); ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch { /* noop */ }
+      ta.remove();
+    }
+    setDone(true); setTimeout(() => setDone(false), 1600);
+  };
+  return <button type="button" className={className ?? "btn sm"} onClick={copy} aria-label={label ?? "Copiar link"}>
+    {done ? <Check /> : <Copy />}{label && <span>{done ? "¡Copiado!" : label}</span>}
+  </button>;
+}
+
+function ShareSheet({ slug, name, close }: any) {
+  const path = `/${slug}/turnos`;
+  const full = () => `${window.location.origin}${path}`;
+  const wa = () => window.open(`https://wa.me/?text=${encodeURIComponent(`Reservá tu turno en ${name}: ${full()}`)}`, "_blank");
+  const native = async () => { try { await (navigator as any).share({ title: name, text: `Reservá tu turno en ${name}`, url: full() }); } catch { /* cancelado */ } };
+  const canNative = typeof navigator !== "undefined" && typeof (navigator as any).share === "function";
+  return <>
+    <SheetHead title="Compartí tu agenda" sub="Tu link de reservas: bio de Instagram, estado de WhatsApp o directo al cliente" onClose={close} />
+    <div className="sheet-body">
+      <div className="share-link"><span className="url">{path}</span><CopyLinkButton path={path} className="btn sm btn-acento" label="Copiar" /></div>
+      <button className="btn block" onClick={wa}><MessageCircle /> Compartir por WhatsApp</button>
+      {canNative && <button className="btn block" onClick={native}><Share2 /> Más opciones…</button>}
+      <a className="btn block" href={path} target="_blank" rel="noopener noreferrer"><ExternalLink /> Abrir mi página</a>
+    </div>
+  </>;
+}
+
+function NotificationsSheet({ profile, close }: any) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [on, setOn] = useState(!!profile.notifyOnBooking);
+  const [email, setEmail] = useState(profile.notifyEmail ?? "");
+  const [error, setError] = useState("");
+  const save = () => {
+    setError("");
+    start(async () => {
+      const r = await saveNotifications({ notifyOnBooking: on, notifyEmail: email });
+      if (!r.ok) { setError(r.error); return; }
+      router.refresh(); close();
+    });
+  };
+  return <>
+    <SheetHead title="Avisos por email" sub="Recibí un mail cada vez que alguien reserva — tenga o no email el cliente" onClose={close} />
+    <div className="sheet-body">
+      <label className="switch-fila">
+        <div><b>Avisarme cada reserva</b><small>Te llega un email con el turno, el cliente y su WhatsApp.</small></div>
+        <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
+        <span className="switch" aria-hidden="true" />
+      </label>
+      <div className="campo" style={{ marginTop: 14 }}><span>Email para los avisos</span>
+        <input type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vos@tunegocio.com" />
+        <p className="ayuda">A este mail te llegan los avisos. Puede ser distinto al de tu cuenta.</p>
+      </div>
+      {error && <p className="campo-error">{error}</p>}
+      <button className="btn btn-acento block" disabled={pending} onClick={save}>{pending ? "Guardando…" : "Guardar"}</button>
     </div>
   </>;
 }

@@ -8,6 +8,7 @@ import { systemDb } from "@/server/db";
 import { DIAS_GRACIA } from "@/server/plans";
 import { trackFor } from "@/server/track";
 import {
+  appUrl,
   obtenerPago,
   obtenerPagoAutorizado,
   obtenerSuscripcion,
@@ -71,6 +72,24 @@ async function tenantDePreapproval(pre: MpPreapproval): Promise<Tenant | null> {
   return null;
 }
 
+// Email de bienvenida al dueño cuando su suscripción queda activa por primera
+// vez. Best-effort: si no hay SMTP o no encontramos su email, se saltea.
+async function enviarBienvenida(tenant: Tenant): Promise<void> {
+  try {
+    const { emailConfigurado, sendEmail } = await import("@/lib/mailer");
+    if (!(await emailConfigurado())) return;
+    const usuario = await systemDb.user.findFirst({ where: { tenantId: tenant.id }, select: { email: true } });
+    const to = usuario?.email || tenant.mpPayerEmail;
+    if (!to) return;
+    const profile = await systemDb.businessProfile.findUnique({ where: { tenantId: tenant.id }, select: { accent: true } });
+    const { emailBienvenidaSuscripcion } = await import("@/lib/emails");
+    const { subject, html } = emailBienvenidaSuscripcion({ negocio: tenant.name, accent: profile?.accent, panelUrl: `${appUrl()}/app` });
+    await sendEmail({ to, subject, html });
+  } catch (e) {
+    console.error("[email] bienvenida suscripción falló", e);
+  }
+}
+
 /**
  * Sincroniza el estado del tenant desde una preapproval de MP (fuente de
  * verdad). Se usa desde el webhook Y desde el retorno de autorización.
@@ -106,6 +125,7 @@ export async function sincronizarPreapproval(pre: MpPreapproval, tenantIdHint?: 
       data.onboardingStep = "listo";
       if (tenant.planStatus !== "ACTIVE" && tenant.planStatus !== "TRIALING") {
         await trackFor(tenant.id, "suscripcion_autorizada", { preapproval: pre.id });
+        void enviarBienvenida(tenant); // primer alta: email de bienvenida (best-effort)
       }
       break;
     case "paused":
