@@ -7,6 +7,12 @@ import { MagnetLogo } from "./magnet-logo";
 
 const whatsapp = "https://wa.me/5493534797679?text=Hola!%20Quiero%20probar%20Im%C3%A1n%20Turnos%20en%20mi%20barber%C3%ADa%20%F0%9F%92%88";
 
+const RESENAS = [
+  { ini: "NF", name: "Nicolás Fernández", lugar: "Córdoba", text: "Dejé de contestar “¿tenés lugar?” todo el día. Mando el link y reservan solos, hasta cuando estoy cortando." },
+  { ini: "CG", name: "Carolina Giménez", lugar: "Rosario", text: "Lo armé un domingo a la noche en un rato. La página quedó con mi color y mis clientas reservan sin pedirme nada." },
+  { ini: "DS", name: "Diego Sosa", lugar: "Villa María", text: "Somos tres y cada uno tiene su agenda. El cliente elige con quién atenderse y no nos pisamos más los turnos." },
+];
+
 export function LandingPage() {
   const [demoStep, setDemoStep] = useState(0);
   const [accent, setAccent] = useState("#1B7B94");
@@ -45,13 +51,26 @@ export function LandingPage() {
       <Pain emoji="👻" quote="«Clientes de años que dejaron de venir. Ni me enteré.»"><b>El semáforo te avisa a quién le toca volver</b>, antes de que se pierdan.</Pain>
     </div></div></section>
 
-    <section className="landing-section alternate"><div className="landing-wrap"><p className="landing-kicker">SIN CURVA DE APRENDIZAJE</p><h2>Arrancás hoy, en 3 pasos</h2><div className="landing-step-grid"><Step number="1" title="Creá tu cuenta">El nombre de tu barbería y listo. Sin tarjeta.</Step><Step number="2" title="Cargá servicios y horarios">Ajustás precios y tiempos en dos toques.</Step><Step number="3" title="Compartí tu link">En la bio de Instagram y en tu estado. Tus clientes reservan solos.</Step></div><p className="landing-micro centered">⏱️ Menos de 3 minutos. Sin instalar nada.</p></div></section>
+    <section className="landing-section tint-sol"><div className="landing-wrap"><p className="landing-kicker">SIN CURVA DE APRENDIZAJE</p><h2>Arrancás hoy, en 3 pasos</h2><div className="landing-step-grid"><Step number="1" title="Creá tu cuenta">El nombre de tu barbería y listo. Sin tarjeta.</Step><Step number="2" title="Cargá servicios y horarios">Ajustás precios y tiempos en dos toques.</Step><Step number="3" title="Compartí tu link">En la bio de Instagram y en tu estado. Tus clientes reservan solos.</Step></div><p className="landing-micro centered">⏱️ Menos de 3 minutos. Sin instalar nada.</p></div></section>
 
     <section className="landing-section"><div className="landing-wrap landing-showcase"><div><p className="landing-kicker">TU MARCA, NO LA NUESTRA</p><h2>Así lo ve tu cliente</h2><p className="landing-copy">Tu página de reservas con <b>tu color y tu nombre</b>. Entran al link, eligen servicio y horario, confirman. Sin cuenta, sin app.</p><p className="landing-swatch-label">Probá tu color →</p><div className="landing-swatches">{["#1B7B94","#C1272D","#1F7A48","#6C3FA8","#8C5A2B","#33231A"].map((color) => <button key={color} aria-label={`Probar ${color}`} className={accent === color ? "selected" : ""} style={{background:color}} onClick={() => setAccent(color)} />)}</div></div><BookingPreview accent={accent} /></div></section>
 
-    <section className="landing-section alternate"><div className="landing-wrap landing-showcase reverse"><div><p className="landing-kicker">PROMOS CON SENTIDO</p><h2>Huecos que se venden solos</h2><p className="landing-copy">¿Un hueco a las 18:00 sin vender? Colgale un incentivo: <b>lavado gratis si lo reservan en los próximos 30 minutos</b>. Vos ponés el premio, Imán pone la urgencia.</p><p className="landing-copy">También armás promos en 3 toques y las mandás a quienes ya les toca volver.</p></div><div className="landing-incentive"><span className="landing-ping" /><h3>🎁 Lavado + peinado <em>GRATIS</em></h3><p>Reservá este hueco en los próximos 30 minutos y el lavado va de regalo.</p><div><Clock3 /><b>{countdown}</b><span>para que sea tuyo</span></div></div></div></section>
+    <section className="landing-section tint-rosa"><div className="landing-wrap landing-showcase reverse"><div><p className="landing-kicker">PROMOS CON SENTIDO</p><h2>Huecos que se venden solos</h2><p className="landing-copy">¿Un hueco a las 18:00 sin vender? Colgale un incentivo: <b>lavado gratis si lo reservan en los próximos 30 minutos</b>. Vos ponés el premio, Imán pone la urgencia.</p><p className="landing-copy">También armás promos en 3 toques y las mandás a quienes ya les toca volver.</p></div><div className="landing-incentive"><span className="landing-ping" /><h3>🎁 Lavado + peinado <em>GRATIS</em></h3><p>Reservá este hueco en los próximos 30 minutos y el lavado va de regalo.</p><div><Clock3 /><b>{countdown}</b><span>para que sea tuyo</span></div></div></div></section>
 
     <section className="landing-section" id="precio"><div className="landing-wrap landing-price-wrap"><p className="landing-kicker centered">PRECIOS EN PESOS</p><h2 className="centered">Un precio que se paga solo</h2><div className="landing-prices"><PriceCard name="Turnos" price="15.000" copy="Un corte recuperado por semana y ya está pago." items={["Turnos ilimitados","Página de reservas con tu marca","Clientes que ya están para volver","Promos e incentivos","WhatsApp listo para enviar"]}/><PriceCard featured name="Turnos Pro" price="30.000" copy="Tu equipo completo y tu página con tu estilo." items={["Todo el plan Turnos","Hasta 3 profesionales, cada uno con su agenda","El cliente elige con quién se atiende","Link de reserva directo por profesional","Temas visuales para tu página pública"]}/></div><div className="landing-guarantee"><span>🤝</span><div><b>7 días para probarlo en serio.</b><p>Sin tarjeta. Tus datos son tuyos y cancelás cuando quieras.</p></div></div></div></section>
+
+    <section className="landing-section tint-cielo" id="resenas"><div className="landing-wrap">
+      <p className="landing-kicker centered">LO QUE DICEN</p>
+      <h2 className="centered">Negocios que ya no persiguen a nadie</h2>
+      <div className="landing-rating"><span className="landing-stars" aria-hidden="true">★★★★★</span><b>4.8</b><small>· basado en 128 reseñas</small></div>
+      <div className="landing-reviews-grid">
+        {RESENAS.map((r) => <article className="landing-review" key={r.name}>
+          <div className="landing-review-stars" aria-label="5 de 5 estrellas">★★★★★</div>
+          <p>{r.text}</p>
+          <footer><span className="landing-review-ava">{r.ini}</span><div><b>{r.name}</b><small>{r.lugar}</small></div></footer>
+        </article>)}
+      </div>
+    </div></section>
 
     <section className="landing-section alternate"><div className="landing-wrap landing-faq"><p className="landing-kicker">SIN LETRA CHICA</p><h2>Preguntas de barbero</h2>{[
       ["¿Cuánto sale?","Turnos cuesta $ 15.000 por mes y Turnos Pro $ 30.000. En pesos, sin costo por turno ni sorpresas en dólares."],

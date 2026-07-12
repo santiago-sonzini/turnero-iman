@@ -51,12 +51,15 @@ function layout({ accent = "#E94F37", preheader = "", heading, lead = "", bodyHt
 </body></html>`;
 }
 
-// Tabla de datos (clave/valor). Escapa los valores.
-function filas(rows: Array<[string, string]>): string {
+// Tabla de datos (clave/valor). Escapa los valores; con href el valor es link.
+type Fila = [string, string] | [string, string, string];
+function filas(rows: Fila[]): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:2px solid ${TINTA};border-radius:14px;overflow:hidden;background:${CREMA};">
-    ${rows.map(([k, v], i) => `<tr>
+    ${rows.map(([k, v, href], i) => `<tr>
       <td style="padding:11px 14px;font-size:13px;color:${TINTA_SUAVE};font-weight:700;white-space:nowrap;${i ? `border-top:1.5px solid ${LINEA};` : ""}">${esc(k)}</td>
-      <td style="padding:11px 14px;font-size:14px;font-weight:800;text-align:right;color:${TINTA};${i ? `border-top:1.5px solid ${LINEA};` : ""}">${esc(v)}</td>
+      <td style="padding:11px 14px;font-size:14px;font-weight:800;text-align:right;color:${TINTA};${i ? `border-top:1.5px solid ${LINEA};` : ""}">${
+        href ? `<a href="${esc(href)}" style="color:${TINTA};text-decoration:underline;">${esc(v)} ↗</a>` : esc(v)
+      }</td>
     </tr>`).join("")}
   </table>`;
 }
@@ -80,8 +83,12 @@ export function emailBienvenidaSuscripcion(o: { negocio: string; accent?: string
 /** Confirmación al cliente que reservó (si dejó su email). */
 export function emailConfirmacionCliente(o: {
   negocio: string; cliente: string; servicio: string; fecha: string; hora: string;
-  direccion?: string | null; accent?: string; url?: string;
+  profesional?: string | null; direccion?: string | null; mapsUrl?: string | null; accent?: string; url?: string;
 }) {
+  // "Dónde" con link a Google Maps si el negocio cargó uno ("Cómo llegar").
+  const donde: Fila[] = o.mapsUrl
+    ? [[ "Dónde", o.direccion || "Ver en Google Maps", o.mapsUrl ]]
+    : o.direccion ? [["Dónde", o.direccion]] : [];
   return {
     subject: `Turno confirmado en ${o.negocio}`,
     html: layout({
@@ -91,8 +98,9 @@ export function emailConfirmacionCliente(o: {
       lead: `Hola ${esc(o.cliente)}, te esperamos en <b style="color:${TINTA}">${esc(o.negocio)}</b>.`,
       bodyHtml: filas([
         ["Servicio", o.servicio],
+        ...(o.profesional ? [["Profesional", o.profesional] as Fila] : []),
         ["Cuándo", `${o.fecha} · ${o.hora} hs`],
-        ...(o.direccion ? [["Dónde", o.direccion] as [string, string]] : []),
+        ...donde,
       ]),
       cta: o.url ? { label: "Ver o cancelar mi turno", url: o.url } : undefined,
       footerNote: "Si no podés asistir, cancelá desde el link para liberar el lugar.",
@@ -103,7 +111,7 @@ export function emailConfirmacionCliente(o: {
 /** Aviso al dueño cuando entra una reserva (si activó las notificaciones). */
 export function emailAvisoTurnoAdmin(o: {
   negocio: string; cliente: string; telefono: string; servicio: string; fecha: string; hora: string;
-  accent?: string; panelUrl: string;
+  profesional?: string | null; accent?: string; panelUrl: string;
 }) {
   return {
     subject: `Nuevo turno: ${o.cliente} · ${o.fecha} ${o.hora}`,
@@ -115,6 +123,7 @@ export function emailAvisoTurnoAdmin(o: {
       bodyHtml: filas([
         ["Cliente", o.cliente],
         ["Servicio", o.servicio],
+        ...(o.profesional ? [["Profesional", o.profesional] as [string, string]] : []),
         ["Cuándo", `${o.fecha} · ${o.hora} hs`],
         ["WhatsApp", o.telefono],
       ]),

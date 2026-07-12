@@ -131,6 +131,7 @@ model BusinessProfile {
   timezone String @default("America/Argentina/Buenos_Aires")
   accent String @default("#E94F37")
   theme String @default("clasico")
+  logoUrl String?
   bookingLeadMinutes Int @default(60)
   bookingHorizonDays Int @default(30)
   slotStepMinutes Int @default(15)
@@ -145,7 +146,7 @@ model BusinessProfile {
   updatedAt DateTime @updatedAt
 }
 
-// Profesional / peluquero del negocio (plan Turnos Auto, hasta MAX_STAFF).
+// Profesional / peluquero del negocio (plan Turnos Pro, hasta MAX_STAFF).
 model Staff {
   id String @id @default(cuid())
   tenantId String
@@ -155,9 +156,21 @@ model Staff {
   active Boolean @default(true)
   sortOrder Int @default(0)
   appointments Appointment[]
+  services StaffService[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([tenantId, active])
+}
+
+// Servicios que ofrece cada profesional. Sin filas para un profesional = ofrece
+// todos (default cómodo para no romper agendas sin asignación explícita).
+model StaffService {
+  staffId String
+  serviceId String
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  @@id([staffId, serviceId])
+  @@index([serviceId])
 }
 
 model Service {
@@ -173,6 +186,7 @@ model Service {
   sortOrder Int @default(0)
   appointments Appointment[]
   promotions Promotion[]
+  staffLinks StaffService[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@unique([tenantId, name])

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, LogOut, MessageCircle, Plus, Scissors, Settings, Share2, Sparkles, Trash2, Users, X } from "lucide-react";
-import { acceptWhatsappRisk, createPromotion, crearTurnoManual, deleteStaff, ownerAvailability, queueGapFill, saveBookingSettings, saveNotifications, saveProfile, saveService, saveStaff, saveTheme, setAppointmentStatus } from "@/app/actions/turnos";
+import { acceptWhatsappRisk, createPromotion, crearTurnoManual, deleteStaff, ownerAvailability, queueGapFill, saveBookingSettings, saveLogo, saveNotifications, saveProfile, saveService, saveStaff, saveTheme, setAppointmentStatus } from "@/app/actions/turnos";
 import { signOut } from "@/app/actions/auth";
 import { instagramHandle } from "@/lib/instagram";
 import { MagnetLogo } from "./magnet-logo";
@@ -43,7 +43,7 @@ export function AppShell({ data }: { data: any }) {
       </header>
 
       <main key={screen} className={`pantalla ${screen === "agenda" ? "con-fab" : ""}`}>
-        {screen === "agenda" && <Agenda date={date} setDate={setDate} view={view} setView={setView} appointments={appointments} hours={data.workingHours} clients={data.clients} onSheet={setSheet} />}
+        {screen === "agenda" && <Agenda date={date} setDate={setDate} view={view} setView={setView} appointments={appointments} hours={data.workingHours} clients={data.clients} staff={data.staff ?? []} onSheet={setSheet} />}
         {screen === "clientes" && <Clients clients={data.clients} profile={data.profile} />}
         {screen === "promos" && <Promos promotions={data.promotions} slug={data.tenant.slug} onCreate={() => setSheet({ type: "promo" })} />}
         {screen === "servicios" && <Services services={data.services} hours={data.workingHours} onCreate={() => setSheet({ type: "service" })} />}
@@ -71,7 +71,7 @@ export function AppShell({ data }: { data: any }) {
         {sheet.type === "manual" && <ManualSheet close={close} services={data.services} clients={data.clients} staff={data.staff ?? []} hours={data.workingHours ?? []} />}
         {sheet.type === "share" && <ShareSheet close={close} slug={data.tenant.slug} name={data.profile?.name ?? data.tenant.name} staff={data.staff ?? []} />}
         {sheet.type === "notif" && <NotificationsSheet close={close} profile={data.profile} />}
-        {sheet.type === "staff" && <StaffSheet close={close} staff={data.staff ?? []} />}
+        {sheet.type === "staff" && <StaffSheet close={close} staff={data.staff ?? []} services={data.services ?? []} />}
         {sheet.type === "theme" && <ThemeSheet close={close} profile={data.profile} />}
       </>}</Sheet>}
     </div>
@@ -106,10 +106,12 @@ function buildDay(date: Date, appointments: any[], hours: any[]) {
   return { dayHours, items, rows, openMin, bookedMin };
 }
 
-function Agenda({ date, setDate, view, setView, appointments, hours, clients, onSheet }: any) {
+function Agenda({ date, setDate, view, setView, appointments, hours, clients, staff = [], onSheet }: any) {
+  const [filterStaff, setFilterStaff] = useState("");
+  const shown = useMemo(() => filterStaff ? appointments.filter((a: any) => a.staffId === filterStaff) : appointments, [appointments, filterStaff]);
   const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(date); d.setDate(date.getDate() - 3 + i); return d; });
   const isToday = localDay(date) === localDay(new Date());
-  const { dayHours, items, rows, openMin, bookedMin } = buildDay(date, appointments, hours);
+  const { dayHours, items, rows, openMin, bookedMin } = buildDay(date, shown, hours);
   const gaps = rows.filter((r) => r.type === "gap");
   const pct = openMin ? Math.min(100, Math.round((bookedMin / openMin) * 100)) : 0;
   const move = (dir: number) => {
@@ -135,12 +137,16 @@ function Agenda({ date, setDate, view, setView, appointments, hours, clients, on
         {(["dia", "semana", "mes"] as const).map((v) => <button key={v} className={view === v ? "on" : ""} onClick={() => setView(v)}>{v === "dia" ? "Día" : v === "semana" ? "Semana" : "Mes"}</button>)}
       </div>
     </div>
+    {staff.length > 0 && <div className="agenda-filtro">
+      <button className={`prof-chip ${!filterStaff ? "on" : ""}`} onClick={() => setFilterStaff("")}>Todos</button>
+      {staff.map((s: any) => <button key={s.id} className={`prof-chip ${filterStaff === s.id ? "on" : ""}`} onClick={() => setFilterStaff(s.id)}>{s.emoji} {s.name}</button>)}
+    </div>}
 
     {view === "dia" && <>
       <div className="semana-strip">
         {days.map((d) => {
           const closed = !hours.some((h: any) => h.weekday === d.getDay() && h.active);
-          const count = appointments.filter((a: any) => localDay(a.startsAt) === localDay(d) && a.status !== "CANCELADO").length;
+          const count = shown.filter((a: any) => localDay(a.startsAt) === localDay(d) && a.status !== "CANCELADO").length;
           return <button key={dayKey(d)} className={`dia-mini ${localDay(d) === localDay(date) ? "sel" : ""} ${localDay(d) === localDay(new Date()) ? "hoy" : ""} ${closed ? "cerrado" : ""}`} onClick={() => setDate(d)}>
             <div className="dw">{d.toLocaleDateString("es-AR", { weekday: "short" }).slice(0, 2)}</div>
             <div className="dn">{d.getDate()}</div>
@@ -155,8 +161,8 @@ function Agenda({ date, setDate, view, setView, appointments, hours, clients, on
       </div>}
       <Timeline date={date} rows={rows} dayHours={dayHours} clients={clients} onSheet={onSheet} />
     </>}
-    {view === "semana" && <WeekGrid days={days} appointments={appointments} hours={hours} onSelect={(a: any) => { setDate(a.startsAt); onSheet({ type: "appointment", appointment: a }); }} onDay={(d: Date) => { setDate(d); setView("dia"); }} />}
-    {view === "mes" && <MonthGrid date={date} appointments={appointments} hours={hours} onSelect={(d: Date) => { setDate(d); setView("dia"); }} />}
+    {view === "semana" && <WeekGrid days={days} appointments={shown} hours={hours} onSelect={(a: any) => { setDate(a.startsAt); onSheet({ type: "appointment", appointment: a }); }} onDay={(d: Date) => { setDate(d); setView("dia"); }} />}
+    {view === "mes" && <MonthGrid date={date} appointments={shown} hours={hours} onSelect={(d: Date) => { setDate(d); setView("dia"); }} />}
   </>;
 }
 
@@ -342,14 +348,20 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
   const [pending, start] = useTransition();
   const [leaving, startLeaving] = useTransition();
   const health = data.whatsapp?.health ?? "DISCONNECTED";
-  const setAccent = (accent: string) => start(async () => {
-    await saveProfile({ name: data.profile.name, phone: data.profile.phone ?? "", address: data.profile.address ?? "", instagram: data.profile.instagram ?? "", accent });
-    router.refresh();
+  const [accentSel, setAccentSel] = useState(String(data.profile.accent));
+  const accentValido = /^#[0-9a-fA-F]{6}$/.test(accentSel);
+  const accentCambio = accentValido && accentSel.toLowerCase() !== String(data.profile.accent).toLowerCase();
+  const setHex = (v: string) => { const h = v.trim().replace(/^#*/, "#"); setAccentSel(h.slice(0, 7)); };
+  const guardarAccent = () => start(async () => {
+    await saveProfile({ name: data.profile.name, phone: data.profile.phone ?? "", address: data.profile.address ?? "", instagram: data.profile.instagram ?? "", accent: accentSel });
+    location.reload();
   });
   return <>
     <div className="seccion-tit"><h2>Ajustes</h2></div>
     <button className="tarjeta-fila" onClick={onEdit}>
-      <span className="ava" style={{ width: 50, height: 50 }}>{initials(data.profile.name)}</span>
+      <span className="ava" style={{ width: 50, height: 50, overflow: "hidden" }}>{data.profile.logoUrl
+        ? <img src={data.profile.logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        : initials(data.profile.name)}</span>
       <div className="info"><span className="nom">{data.profile.name}</span><span className="sub">{data.profile.address ?? "Sumá tu dirección"}</span></div>
       <ChevronRight />
     </button>
@@ -365,11 +377,17 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
       <div className="info"><span className="nom">Avisos por email</span><span className="sub">{data.profile.notifyOnBooking ? `Activado · ${data.profile.notifyEmail ?? ""}` : "Recibí un mail por cada reserva"}</span></div>
       <ChevronRight />
     </button>
-    <div className="seccion-tit"><h2>Tema de tu marca</h2>{pending && <span className="chip">Guardando…</span>}</div>
+    <div className="seccion-tit"><h2>Color de tu marca</h2></div>
     <div className="tema-grid">
       {["#E94F37", "#C5386A", "#7656D6", "#246BCE", "#1B7B94", "#198754", "#C26A12", "#33231A"].map((c) =>
-        <button key={c} aria-label={`Usar color ${c}`} disabled={pending} onClick={() => setAccent(c)} style={{ background: c }} className={`tema-sw ${c.toLowerCase() === String(data.profile.accent).toLowerCase() ? "sel" : ""}`} />)}
+        <button key={c} aria-label={`Usar color ${c}`} onClick={() => setAccentSel(c)} style={{ background: c }} className={`tema-sw ${c.toLowerCase() === accentSel.toLowerCase() ? "sel" : ""}`} />)}
     </div>
+    <div className="color-hex">
+      <input type="color" aria-label="Elegir color" value={accentValido ? accentSel : "#E94F37"} onChange={(e) => setAccentSel(e.target.value)} />
+      <input value={accentSel} onChange={(e) => setHex(e.target.value)} placeholder="#E94F37" maxLength={7} spellCheck={false} aria-invalid={!accentValido} />
+      {!accentValido && <span className="color-hex-err">Hex inválido</span>}
+    </div>
+    {accentCambio && <button className="btn btn-acento block" style={{ marginTop: 10 }} disabled={pending} onClick={guardarAccent}>{pending ? "Guardando…" : "Guardar color"}</button>}
     <div className="seccion-tit"><h2>Turnos Pro</h2></div>
     {auto && <button className="tarjeta-fila" onClick={onStaff}>
       <span className="emo">💈</span>
@@ -389,6 +407,12 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
     <a className="tarjeta-fila" href="/suscripcion">
       <span className="emo">💳</span>
       <div className="info"><span className="nom">Suscripción</span><span className="sub">Plan, débito automático y facturación</span></div>
+      <ChevronRight />
+    </a>
+    <div className="seccion-tit"><h2>Ayuda</h2></div>
+    <a className="tarjeta-fila" href="https://wa.me/5493534797679?text=Hola!%20Necesito%20ayuda%20con%20Imán%20Turnos" target="_blank" rel="noopener noreferrer">
+      <span className="emo">💬</span>
+      <div className="info"><span className="nom">Contactanos</span><span className="sub">Escribinos por WhatsApp, te ayudamos</span></div>
       <ChevronRight />
     </a>
     <button className="btn btn-danger block" style={{ marginTop: 18 }} disabled={leaving} onClick={() => startLeaving(async () => { await signOut(); })}>
@@ -531,11 +555,48 @@ function PromoSheet({ services, close }: any) {
   </>;
 }
 
+// Redimensiona la imagen elegida a ≤512px y la devuelve como data URL webp
+// (liviana): así el logo viaja y se guarda chico sin depender de storage.
+function fileToLogoDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const max = 512;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const webp = canvas.toDataURL("image/webp", 0.85);
+      resolve(webp.startsWith("data:image/webp") ? webp : canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("imagen inválida")); };
+    img.src = url;
+  });
+}
+
 function ProfileSheet({ profile, close }: any) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [form, set] = useState({ name: profile.name, phone: profile.phone ?? "", address: profile.address ?? "", mapsUrl: profile.mapsUrl ?? "", instagram: profile.instagram ?? "", accent: profile.accent });
   const [error, setError] = useState("");
+  const [logo, setLogo] = useState<string | null>(profile.logoUrl ?? null);
+  const [logoBusy, startLogo] = useTransition();
+  const pickLogo = (file: File | undefined) => {
+    if (!file) return;
+    setError("");
+    startLogo(async () => {
+      try {
+        const dataUrl = await fileToLogoDataUrl(file);
+        const r = await saveLogo(dataUrl);
+        if (!r.ok) { setError(r.error); return; }
+        setLogo(dataUrl); router.refresh();
+      } catch { setError("No pudimos leer esa imagen. Probá con otra."); }
+    });
+  };
+  const quitarLogo = () => startLogo(async () => { await saveLogo(null); setLogo(null); router.refresh(); });
   const labels: Record<string, string> = { name: "Nombre", phone: "WhatsApp", address: "Dirección" };
   const igHandle = instagramHandle(form.instagram);
   const igInvalido = !!form.instagram.trim() && !igHandle;
@@ -547,6 +608,17 @@ function ProfileSheet({ profile, close }: any) {
   return <>
     <SheetHead title="Datos y color" sub="Esto se ve en tu página pública" onClose={close} />
     <form className="sheet-body" onSubmit={submit}>
+      <div className="campo"><span>Logo del negocio</span>
+        <div className="logo-fila">
+          <span className="logo-prev">{logo ? <img src={logo} alt="Logo del negocio" /> : <span className="logo-vacio">🧲</span>}</span>
+          <label className={`btn sm ${logoBusy ? "disabled" : ""}`} style={{ cursor: "pointer" }}>
+            {logoBusy ? "Subiendo…" : logo ? "Cambiar" : "Subir logo"}
+            <input type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={logoBusy} onChange={(e) => { pickLogo(e.target.files?.[0]); e.target.value = ""; }} />
+          </label>
+          {logo && <button type="button" className="btn sm" disabled={logoBusy} onClick={quitarLogo}>Quitar</button>}
+        </div>
+        <p className="ayuda">Se muestra en tu página de reservas en lugar del emoji.</p>
+      </div>
       {(["name", "phone", "address"] as const).map((key) =>
         <div className="campo" key={key}><span>{labels[key]}</span><input value={(form as any)[key]} onChange={(e) => set({ ...form, [key]: e.target.value })} /></div>)}
       <div className="campo"><span>Instagram</span>
@@ -678,6 +750,11 @@ function ManualSheet({ services, clients, staff = [], hours = [], close }: any) 
   const [tel, setTel] = useState("");
   const [error, setError] = useState("");
 
+  // Profesionales que ofrecen el servicio elegido (sin asignar = todos).
+  const svcSel = activos.find((s: any) => s.id === serviceId);
+  const staffParaSvc = useMemo(() => svcSel ? staff.filter((s: any) => !s.serviceIds?.length || s.serviceIds.includes(svcSel.id)) : staff, [svcSel, staff]);
+  useEffect(() => { if (staffId && !staffParaSvc.some((s: any) => s.id === staffId)) setStaffId(""); }, [serviceId]); // eslint-disable-line
+
   // Recalcula horarios libres cada vez que cambia servicio, profesional o día.
   useEffect(() => {
     if (!serviceId || !date) { setSlots([]); return; }
@@ -720,10 +797,10 @@ function ManualSheet({ services, clients, staff = [], hours = [], close }: any) 
           {activos.map((s: any) => <option key={s.id} value={s.id}>{s.emoji} {s.name} · {s.durationMinutes} min</option>)}
         </select>
       </div>
-      {staff.length > 0 && <div className="campo"><span>Profesional</span>
+      {staffParaSvc.length > 0 && <div className="campo"><span>Profesional</span>
         <select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
           <option value="">Cualquiera disponible</option>
-          {staff.map((s: any) => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+          {staffParaSvc.map((s: any) => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
         </select>
       </div>}
       <div className="campo"><span>Día</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
@@ -819,36 +896,55 @@ function NotificationsSheet({ profile, close }: any) {
 }
 
 const STAFF_EMOJIS = ["💈", "✂️", "💇", "💅", "🧔", "👩", "🎨", "🪒"];
-function StaffSheet({ staff, close }: any) {
+function StaffSheet({ staff, services = [], close }: any) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState("");
   const [nombre, setNombre] = useState("");
   const [emoji, setEmoji] = useState("💈");
+  const [nuevoSvc, setNuevoSvc] = useState<string[]>([]);
+  const activos = services.filter((s: any) => s.active);
   const add = () => {
     setError("");
     if (nombre.trim().length < 2) { setError("Poné el nombre del profesional."); return; }
     start(async () => {
-      const r = await saveStaff({ name: nombre, emoji });
+      const r = await saveStaff({ name: nombre, emoji, serviceIds: nuevoSvc });
       if (!r.ok) { setError(r.error); return; }
-      setNombre(""); router.refresh();
+      setNombre(""); setNuevoSvc([]); router.refresh();
     });
   };
   const remove = (id: string) => start(async () => { await deleteStaff(id); router.refresh(); });
+  const toggleSvc = (s: any, serviceId: string) => start(async () => {
+    const ids: string[] = s.serviceIds ?? [];
+    const next = ids.includes(serviceId) ? ids.filter((x) => x !== serviceId) : [...ids, serviceId];
+    await saveStaff({ id: s.id, name: s.name, emoji: s.emoji, serviceIds: next });
+    router.refresh();
+  });
+  const toggleNuevo = (serviceId: string) => setNuevoSvc((ids) => ids.includes(serviceId) ? ids.filter((x) => x !== serviceId) : [...ids, serviceId]);
   return <>
-    <SheetHead title="Tu equipo" sub="Hasta 3 profesionales, cada uno con su agenda. El cliente elige con quién reservar." onClose={close} />
+    <SheetHead title="Tu equipo" sub="Hasta 3 profesionales, cada uno con su agenda y sus servicios. El cliente elige con quién." onClose={close} />
     <div className="sheet-body">
-      {staff.length > 0 && <div className="staff-list">
-        {staff.map((s: any) => <div className="staff-row" key={s.id}>
+      {staff.map((s: any) => <div className="staff-card" key={s.id}>
+        <div className="staff-card-top">
           <span className="em">{s.emoji}</span><b>{s.name}</b>
           <button className="staff-del" aria-label={`Quitar ${s.name}`} disabled={pending} onClick={() => remove(s.id)}><Trash2 /></button>
-        </div>)}
-      </div>}
+        </div>
+        {activos.length > 0 && <>
+          <div className="svc-chips">
+            {activos.map((sv: any) => <button type="button" key={sv.id} disabled={pending} className={`svc-chip ${(s.serviceIds ?? []).includes(sv.id) ? "on" : ""}`} onClick={() => toggleSvc(s, sv.id)}>{sv.emoji} {sv.name}</button>)}
+          </div>
+          <p className="ayuda">{(s.serviceIds ?? []).length === 0 ? "Sin elegir = ofrece todos los servicios." : `Ofrece ${(s.serviceIds ?? []).length} servicio${(s.serviceIds ?? []).length === 1 ? "" : "s"}.`}</p>
+        </>}
+      </div>)}
       {staff.length < 3 ? <>
-        <div className="campo" style={{ marginTop: 12 }}><span>Nuevo profesional</span>
+        <div className="campo" style={{ marginTop: 4 }}><span>Nuevo profesional</span>
           <div className="emoji-pick">{STAFF_EMOJIS.map((e) => <button type="button" key={e} className={emoji === e ? "on" : ""} onClick={() => setEmoji(e)}>{e}</button>)}</div>
           <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Nico" maxLength={40} />
         </div>
+        {activos.length > 0 && <div className="campo"><span>Servicios que ofrece <em className="opt">opcional</em></span>
+          <div className="svc-chips">{activos.map((sv: any) => <button type="button" key={sv.id} className={`svc-chip ${nuevoSvc.includes(sv.id) ? "on" : ""}`} onClick={() => toggleNuevo(sv.id)}>{sv.emoji} {sv.name}</button>)}</div>
+          <p className="ayuda">Sin elegir = ofrece todos.</p>
+        </div>}
         {error && <p className="campo-error">{error}</p>}
         <button className="btn btn-acento block" disabled={pending} onClick={add}><Plus /> Agregar profesional</button>
       </> : <p className="ayuda">Llegaste al máximo de 3 profesionales.</p>}
@@ -862,22 +958,23 @@ const TEMAS_UI = [
   { id: "noche", label: "Noche", desc: "Modo oscuro, moderno.", bg: "#151210", ink: "#F1E9DE", acc: "#E94F37" },
 ];
 function ThemeSheet({ profile, close }: any) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [sel, setSel] = useState(profile.theme ?? "clasico");
   const [error, setError] = useState("");
-  const pick = (id: string) => { setSel(id); setError(""); start(async () => { const r = await saveTheme(id); if (!r.ok) { setError(r.error); setSel(profile.theme ?? "clasico"); return; } router.refresh(); }); };
+  const cambio = sel !== (profile.theme ?? "clasico");
+  const guardar = () => start(async () => { const r = await saveTheme(sel); if (!r.ok) { setError(r.error); return; } location.reload(); });
   return <>
     <SheetHead title="Tema visual" sub="El estilo de tu página pública de reservas" onClose={close} />
     <div className="sheet-body">
       <div className="tema-cards">
-        {TEMAS_UI.map((t) => <button key={t.id} className={`tema-card ${sel === t.id ? "on" : ""}`} disabled={pending} onClick={() => pick(t.id)}>
+        {TEMAS_UI.map((t) => <button key={t.id} className={`tema-card ${sel === t.id ? "on" : ""}`} onClick={() => { setSel(t.id); setError(""); }}>
           <span className="tema-swatch" style={{ background: t.bg, color: t.ink, borderColor: t.ink }}><i style={{ background: t.acc }} />Aa</span>
           <span className="tema-info"><b>{t.label}</b><small>{t.desc}</small></span>
           {sel === t.id && <Check />}
         </button>)}
       </div>
       {error && <p className="campo-error">{error}</p>}
+      <button className="btn btn-acento block" style={{ marginTop: 14 }} disabled={pending || !cambio} onClick={guardar}>{pending ? "Guardando…" : "Guardar tema"}</button>
     </div>
   </>;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CalendarPlus, Check, Clock3, Instagram, MapPin, MessageCircle, X } from "lucide-react";
 import { bookPublic, cancelPublicAppointment } from "@/app/actions/turnos";
@@ -31,32 +31,41 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
   const days = useMemo(() => Array.from({ length: horizonDays }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d; }), [horizonDays]);
   const openWeekdays = useMemo(() => new Set(initial.hours.map((h: any) => h.weekday)), [initial.hours]);
 
-  // Disponibilidad al instante en el cliente. Con profesionales: si elegís uno,
-  // cupo 1 y solo su ocupación; "cualquiera" queda libre mientras haya alguno
-  // sin ocupar. El server re-valida y asigna al confirmar.
+  // Profesionales que ofrecen el servicio elegido (sin servicios asignados = todos).
+  const staffParaServicio = useMemo(
+    () => service ? staffList.filter((s: any) => !s.serviceIds?.length || s.serviceIds.includes(service.id)) : staffList,
+    [service, staffList],
+  );
+  // Si el profe elegido no ofrece el servicio nuevo, volvemos a "cualquiera".
+  useEffect(() => {
+    if (staffId && service && !staffParaServicio.some((s: any) => s.id === staffId)) setStaffId("");
+  }, [service, staffId, staffParaServicio]);
+
+  // Disponibilidad al instante en el cliente. Con profesional: cupo 1 y su
+  // ocupación; "cualquiera" queda libre mientras haya uno (que ofrezca el
+  // servicio) sin ocupar. El server re-valida y asigna al confirmar.
   const slots = useMemo(() => {
     if (!service || !date) return [];
     const busyAll: any[] = initial.busy ?? [];
-    const busy = staffId ? busyAll.filter((b) => b.staffId === staffId) : busyAll;
-    const capacity = staffId ? 1 : Math.max(1, staffList.length);
-    return computeSlots({ date, durationMinutes: service.durationMinutes, hours: initial.hours, busy, rules: initial.profile, vacations, capacity });
-  }, [service, date, staffId, initial, vacations]);
+    if (staffId) {
+      const busy = busyAll.filter((b) => b.staffId === staffId);
+      return computeSlots({ date, durationMinutes: service.durationMinutes, hours: initial.hours, busy, rules: initial.profile, vacations, capacity: 1 });
+    }
+    if (staffList.length && staffParaServicio.length) {
+      const ids = new Set(staffParaServicio.map((s: any) => s.id));
+      const busy = busyAll.filter((b) => ids.has(b.staffId));
+      return computeSlots({ date, durationMinutes: service.durationMinutes, hours: initial.hours, busy, rules: initial.profile, vacations, capacity: staffParaServicio.length });
+    }
+    return computeSlots({ date, durationMinutes: service.durationMinutes, hours: initial.hours, busy: busyAll, rules: initial.profile, vacations, capacity: 1 });
+  }, [service, date, staffId, staffParaServicio, staffList.length, initial, vacations]);
 
-  const staffElegido = staffId ? staffList.find((s) => s.id === staffId) : null;
+  const staffElegido = staffId ? staffParaServicio.find((s: any) => s.id === staffId) : null;
 
   const submit = () => start(async () => {
     const r = await bookPublic({ slug: initial.tenant.slug, serviceId: service.id, date, time, staffId: staffId || undefined, ...form, marketingConsent, promoToken });
     setResult(r);
     if (r.ok) { setStep(3); window.scrollTo({ top: 0 }); }
   });
-
-  // ¿Se puede cancelar online el turno recién reservado? (misma regla que la
-  // ventana del negocio; si no, queda "Escribir al negocio").
-  const cancelable = useMemo(() => {
-    const wh = initial.profile.cancelWindowHours ?? 48;
-    if (wh <= 0 || !date || !time) return false;
-    return new Date(`${date}T${time}:00-03:00`).getTime() - wh * 3_600_000 > Date.now();
-  }, [initial.profile.cancelWindowHours, date, time]);
 
   const cancelBooking = () => start(async () => {
     setCancelErr("");
@@ -95,7 +104,9 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
   return <main className="bk" data-theme={initial.profile.theme ?? "clasico"} style={{ "--acento": initial.profile.accent } as React.CSSProperties}>
     <header className="bk-hero">
       <span className="powered"><MagnetLogo /> Imán Turnos</span>
-      <div className="foto">{initial.services[0]?.emoji ?? "🧲"}</div>
+      <div className="foto">{initial.profile.logoUrl
+        ? <img src={initial.profile.logoUrl} alt={`Logo de ${initial.profile.name}`} />
+        : initial.services[0]?.emoji ?? "🧲"}</div>
       <h1>{initial.profile.name}</h1>
       {initial.profile.mapsUrl
         ? <a className="meta meta-link" href={initial.profile.mapsUrl} target="_blank" rel="noopener noreferrer"><MapPin /> {initial.profile.address || "Cómo llegar"}</a>
@@ -124,11 +135,11 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
       <button className="bk-volver" onClick={() => setStep(0)}><ArrowLeft /> Cambiar servicio</button>
       <h2 className="bk-titulo">¿Cuándo venís?</h2>
       <p className="bk-sub">{service.emoji} {service.name} · {service.durationMinutes} min</p>
-      {staffList.length > 0 && <div className="prof-picker">
+      {staffParaServicio.length > 0 && <div className="prof-picker">
         <span className="prof-label">¿Con quién?</span>
         <div className="prof-chips">
           <button className={`prof-chip ${!staffId ? "on" : ""}`} onClick={() => { setStaffId(""); setTime(""); }}>Cualquiera</button>
-          {staffList.map((s) => <button key={s.id} className={`prof-chip ${staffId === s.id ? "on" : ""}`} onClick={() => { setStaffId(s.id); setTime(""); }}>{s.emoji} {s.name}</button>)}
+          {staffParaServicio.map((s: any) => <button key={s.id} className={`prof-chip ${staffId === s.id ? "on" : ""}`} onClick={() => { setStaffId(s.id); setTime(""); }}>{s.emoji} {s.name}</button>)}
         </div>
       </div>}
       <div className="dias-scroll">
@@ -216,7 +227,7 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
           <button className="btn btn-acento block" onClick={addToCalendar}><CalendarPlus /> Agregar a calendario</button>
           {initial.profile.phone && <a className="btn btn-wa block" href={`https://wa.me/54${initial.profile.phone.replace(/\D/g, "")}`} target="_blank"><MessageCircle /> Escribir al negocio</a>}
         </div>
-        {result?.appointmentId && cancelable && <div className="bk-ok-cancelar">
+        {result?.appointmentId && <div className="bk-ok-cancelar">
           {cancelStep === "confirm"
             ? <><p className="bk-cancel-q">¿Seguro que querés cancelar este turno?</p>
                 <div className="bk-cancel-row">
@@ -229,7 +240,7 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
       </>}
     </section>}
 
-    <footer className="bk-foot">Reservas con <MagnetLogo /> <b>Imán Turnos</b></footer>
+    <footer className="bk-foot"><a href="/" target="_blank" rel="noopener noreferrer">Reservas con <MagnetLogo /> <b>Imán Turnos</b></a></footer>
   </main>;
 }
 
@@ -241,7 +252,6 @@ function ReturningClient({ mis, slug, windowHours }: { mis: any; slug: string; w
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const now = Date.now();
-  const winMs = (windowHours ?? 48) * 3_600_000;
   const fmt = (v: string) => new Date(v).toLocaleString("es-AR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
   const fmtDay = (v: string) => new Date(v).toLocaleDateString("es-AR", { day: "numeric", month: "long" });
   const upcoming = mis.appointments.filter((a: any) => new Date(a.startsAt).getTime() >= now).sort((a: any, b: any) => +new Date(a.startsAt) - +new Date(b.startsAt));
@@ -255,18 +265,13 @@ function ReturningClient({ mis, slug, windowHours }: { mis: any; slug: string; w
   });
   return <div className="mis-turnos">
     <div className="mt-head"><Smiley happy /><div><b>¡Hola de nuevo, {mis.name.split(" ")[0]}! 👋</b><small>{upcoming.length ? "Tus próximos turnos" : "Reservá tu próximo turno acá abajo"}</small></div></div>
-    {upcoming.map((a: any) => {
-      const cancelable = windowHours > 0 && new Date(a.startsAt).getTime() - winMs > now;
-      return <div className="mt-row" key={a.id}>
-        <span className="em">{a.service.emoji}</span>
-        <div className="info"><b>{a.service.name}</b><small>{fmt(a.startsAt)} hs</small></div>
-        {confirmId === a.id
-          ? <span className="mt-confirm"><button className="si" disabled={pending} onClick={() => cancel(a.id)}>{pending ? "…" : "Sí"}</button><button className="no" disabled={pending} onClick={() => setConfirmId(null)}>No</button></span>
-          : cancelable
-            ? <button className="mt-cancel" onClick={() => setConfirmId(a.id)}>Cancelar</button>
-            : <em>Reservado</em>}
-      </div>;
-    })}
+    {upcoming.map((a: any) => <div className="mt-row" key={a.id}>
+      <span className="em">{a.service.emoji}</span>
+      <div className="info"><b>{a.service.name}</b><small>{fmt(a.startsAt)} hs</small></div>
+      {confirmId === a.id
+        ? <span className="mt-confirm"><button className="si" disabled={pending} onClick={() => cancel(a.id)}>{pending ? "…" : "Sí"}</button><button className="no" disabled={pending} onClick={() => setConfirmId(null)}>No</button></span>
+        : <button className="mt-cancel" onClick={() => setConfirmId(a.id)}>Cancelar</button>}
+    </div>)}
     {upcoming.length > 0 && windowHours > 0 && <p className="mt-note">Podés cancelar online hasta {windowHours} h antes del turno.</p>}
     {error && <p className="form-error" style={{ marginTop: 8 }}>{error}</p>}
     {!upcoming.length && last && <p className="mt-last">Tu última visita fue <b>{last.service.name}</b> el {fmtDay(last.startsAt)}.</p>}

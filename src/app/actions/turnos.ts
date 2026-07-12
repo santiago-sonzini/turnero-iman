@@ -20,14 +20,20 @@ const localDayAR = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Am
 const MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const fmtFechaEmail = (d: string) => { const [, m, day] = d.split("-").map(Number); return `${day} de ${MESES_ES[(m ?? 1) - 1]}`; };
 
+// Profesionales que ofrecen un servicio: los que lo tienen asignado, o TODOS
+// los que no tienen ninguno asignado (default cómodo para no romper agendas).
+function ofrecenServicio<T extends { services: { serviceId: string }[] }>(staff: T[], serviceId: string): T[] {
+  return staff.filter((s) => s.services.length === 0 || s.services.some((x) => x.serviceId === serviceId));
+}
+
 // Manda los emails de una reserva (fuera del camino crítico). Confirmación al
 // cliente si dejó su email; aviso al dueño si activó las notificaciones —
 // independiente de si el cliente cargó o no su email.
 async function enviarEmailsReserva(a: {
   tenant: { name: string; slug: string };
-  profile: { accent?: string; address?: string | null; notifyOnBooking?: boolean; notifyEmail?: string | null } | null;
+  profile: { accent?: string; address?: string | null; mapsUrl?: string | null; notifyOnBooking?: boolean; notifyEmail?: string | null } | null;
   service: { name: string };
-  clienteNombre: string; clienteEmail: string | null; telefono: string; date: string; time: string; clientToken?: string;
+  clienteNombre: string; clienteEmail: string | null; telefono: string; date: string; time: string; clientToken?: string; profesional?: string | null;
 }) {
   try {
     const { emailConfigurado, sendEmail } = await import("@/lib/mailer");
@@ -42,14 +48,15 @@ async function enviarEmailsReserva(a: {
       const url = a.clientToken ? `${base}/${a.tenant.slug}/turnos?c=${a.clientToken}` : `${base}/${a.tenant.slug}/turnos`;
       const { subject, html } = emailConfirmacionCliente({
         negocio: a.tenant.name, cliente: a.clienteNombre, servicio: a.service.name,
-        fecha, hora: a.time, direccion: a.profile?.address ?? null, accent, url,
+        fecha, hora: a.time, direccion: a.profile?.address ?? null, mapsUrl: a.profile?.mapsUrl ?? null,
+        profesional: a.profesional, accent, url,
       });
       await sendEmail({ to: a.clienteEmail, subject, html }).catch((e) => console.error("[email] confirmación cliente falló", e));
     }
     if (a.profile?.notifyOnBooking && a.profile?.notifyEmail) {
       const { subject, html } = emailAvisoTurnoAdmin({
         negocio: a.tenant.name, cliente: a.clienteNombre, telefono: a.telefono,
-        servicio: a.service.name, fecha, hora: a.time, accent, panelUrl: `${base}/app`,
+        servicio: a.service.name, fecha, hora: a.time, profesional: a.profesional, accent, panelUrl: `${base}/app`,
       });
       await sendEmail({ to: a.profile.notifyEmail, subject, html }).catch((e) => console.error("[email] aviso dueño falló", e));
     }
@@ -63,7 +70,7 @@ export async function getOwnerData(from: Date, to: Date) {
   const [profile, services, staff, workingHours, appointments, clients, promotions, whatsapp] = await Promise.all([
     db.businessProfile.findFirst(),
     db.service.findMany({ orderBy: { sortOrder: "asc" } }),
-    db.staff.findMany({ orderBy: { sortOrder: "asc" } }),
+    db.staff.findMany({ orderBy: { sortOrder: "asc" }, include: { services: { select: { serviceId: true } } } }),
     db.workingHour.findMany({ orderBy: [{ weekday: "asc" }, { startMinutes: "asc" }] }),
     db.appointment.findMany({
       where: { startsAt: { gte: from, lte: to } },
@@ -73,7 +80,8 @@ export async function getOwnerData(from: Date, to: Date) {
     db.promotion.findMany({ include: { service: true }, orderBy: { createdAt: "desc" } }),
     db.whatsappSession.findFirst(),
   ]);
-  return { tenant, profile, services, staff, workingHours, appointments, clients, promotions, whatsapp };
+  const staffConServicios = staff.map((s) => ({ ...s, serviceIds: s.services.map((x) => x.serviceId) }));
+  return { tenant, profile, services, staff: staffConServicios, workingHours, appointments, clients, promotions, whatsapp };
 }
 
 export async function getPublicBooking(slug: string, promoToken?: string, clientToken?: string) {
@@ -87,7 +95,7 @@ export async function getPublicBooking(slug: string, promoToken?: string, client
   const multiStaff = tieneFeature(tenant, "multi_staff");
   const [services, staff, hours, busy, promo, returning] = await Promise.all([
     systemDb.service.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { sortOrder: "asc" } }),
-    multiStaff ? systemDb.staff.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { sortOrder: "asc" } }) : Promise.resolve([]),
+    multiStaff ? systemDb.staff.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { sortOrder: "asc" }, include: { services: { select: { serviceId: true } } } }) : Promise.resolve([]),
     systemDb.workingHour.findMany({ where: { tenantId: tenant.id, active: true } }),
     // Ventanas ocupadas del horizonte completo: el cliente calcula los
     // huecos al instante, sin volver al server ("buscando huecos" ya no espera).
@@ -107,7 +115,8 @@ export async function getPublicBooking(slug: string, promoToken?: string, client
     : null;
   // No exponer los datos de notificación del dueño en la página pública.
   const { notifyEmail, notifyOnBooking, ...profilePublico } = tenant.profile;
-  return { tenant, profile: profilePublico, services, staff, hours, busy, promo, horizonDays, misTurnos };
+  const staffPublico = (staff as any[]).map((s) => ({ id: s.id, name: s.name, emoji: s.emoji, serviceIds: (s.services ?? []).map((x: any) => x.serviceId) }));
+  return { tenant, profile: profilePublico, services, staff: staffPublico, hours, busy, promo, horizonDays, misTurnos };
 }
 
 export async function publicAvailability(slug: string, serviceId: string, date: string, staffId?: string) {
@@ -118,17 +127,27 @@ export async function publicAvailability(slug: string, serviceId: string, date: 
   if (!service?.tenant.profile) return [];
   const tenantId = service.tenantId;
   const multiStaff = tieneFeature(service.tenant, "multi_staff");
-  const staffActivos = multiStaff ? await systemDb.staff.count({ where: { tenantId, active: true } }) : 0;
+  let capacity = 1;
+  let staffFilter: Record<string, unknown> = {};
+  if (multiStaff) {
+    const activos = await systemDb.staff.findMany({ where: { tenantId, active: true }, select: { id: true, services: { select: { serviceId: true } } } });
+    if (activos.length) {
+      if (staffId) { staffFilter = { staffId }; capacity = 1; }
+      else {
+        const ofrecen = ofrecenServicio(activos, serviceId);
+        if (!ofrecen.length) return []; // ningún profesional ofrece este servicio
+        staffFilter = { staffId: { in: ofrecen.map((s) => s.id) } };
+        capacity = ofrecen.length;
+      }
+    }
+  }
   const [busy, hours] = await Promise.all([
     systemDb.appointment.findMany({
-      where: { tenantId, status: { not: "CANCELADO" }, startsAt: { lte: localDate(date, 1439) }, endsAt: { gte: localDate(date, 0) }, ...(staffId ? { staffId } : {}) },
+      where: { tenantId, status: { not: "CANCELADO" }, startsAt: { lte: localDate(date, 1439) }, endsAt: { gte: localDate(date, 0) }, ...staffFilter },
       select: { startsAt: true, endsAt: true },
     }),
     systemDb.workingHour.findMany({ where: { tenantId, active: true } }),
   ]);
-  // Con profesional elegido: cupo 1 (su agenda). "Cualquiera": cupo = cantidad
-  // de profesionales activos (libre mientras haya al menos uno sin ocupar).
-  const capacity = staffId ? 1 : Math.max(1, staffActivos);
   return computeSlots({ date, durationMinutes: service.durationMinutes, hours, busy, rules: service.tenant.profile, capacity });
 }
 
@@ -175,18 +194,21 @@ export async function bookPublic(input: z.infer<typeof bookingSchema>) {
   if (data.date > maxDay) return { ok: false as const, error: "Ese día todavía no está habilitado para reservar." };
   const multiStaff = tieneFeature(tenant, "multi_staff");
   const staffActivos = multiStaff
-    ? await systemDb.staff.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, emoji: true } })
+    ? await systemDb.staff.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, emoji: true, services: { select: { serviceId: true } } } })
     : [];
+  const staffOfrecen = ofrecenServicio(staffActivos, service.id);
   const staffPedido = data.staffId?.trim() || null;
-  if (staffPedido && !staffActivos.some((s) => s.id === staffPedido)) return { ok: false as const, error: "Ese profesional no está disponible." };
+  if (staffPedido && !staffOfrecen.some((s) => s.id === staffPedido)) return { ok: false as const, error: "Ese profesional no atiende este servicio." };
+  if (staffActivos.length && !staffPedido && !staffOfrecen.length) return { ok: false as const, error: "Ese servicio no tiene un profesional asignado todavía." };
+  const staffFilter = staffPedido ? { staffId: staffPedido } : (staffActivos.length ? { staffId: { in: staffOfrecen.map((s) => s.id) } } : {});
   const [busy, hours] = await Promise.all([
     systemDb.appointment.findMany({
-      where: { tenantId: tenant.id, status: { not: "CANCELADO" }, startsAt: { lte: localDate(data.date, 1439) }, endsAt: { gte: localDate(data.date, 0) }, ...(staffPedido ? { staffId: staffPedido } : {}) },
+      where: { tenantId: tenant.id, status: { not: "CANCELADO" }, startsAt: { lte: localDate(data.date, 1439) }, endsAt: { gte: localDate(data.date, 0) }, ...staffFilter },
       select: { startsAt: true, endsAt: true },
     }),
     systemDb.workingHour.findMany({ where: { tenantId: tenant.id, active: true } }),
   ]);
-  const capacity = staffPedido ? 1 : Math.max(1, staffActivos.length);
+  const capacity = staffPedido ? 1 : Math.max(1, staffActivos.length ? staffOfrecen.length : 1);
   const available = computeSlots({ date: data.date, durationMinutes: service.durationMinutes, hours, busy, rules: tenant.profile, vacations, capacity });
   if (!available.includes(data.time)) return { ok: false as const, error: "Ese horario acaba de ocuparse. Elegí otro." };
   const [h = 0, m = 0] = data.time.split(":").map(Number);
@@ -194,7 +216,7 @@ export async function bookPublic(input: z.infer<typeof bookingSchema>) {
   const endsAt = new Date(startsAt.getTime() + (service.durationMinutes + tenant.profile.bufferMinutes) * 60000);
   let staffAsignado: string | null;
   try {
-    staffAsignado = await resolverStaff(tenant.id, staffActivos, staffPedido, startsAt, endsAt);
+    staffAsignado = await resolverStaff(tenant.id, staffOfrecen, staffPedido, startsAt, endsAt);
   } catch { return { ok: false as const, error: "Ese horario acaba de ocuparse. Elegí otro." }; }
   try {
     const { appointment, clientToken } = await systemDb.$transaction(async (tx) => {
@@ -230,6 +252,7 @@ export async function bookPublic(input: z.infer<typeof bookingSchema>) {
       tenant, profile: tenant.profile, service,
       clienteNombre: data.name, clienteEmail: data.email || null, telefono: phone(data.phone),
       date: data.date, time: data.time, clientToken,
+      profesional: staffAsignado ? (staffActivos.find((s) => s.id === staffAsignado)?.name ?? null) : null,
     });
     const staff = staffAsignado ? staffActivos.find((s) => s.id === staffAsignado) ?? null : null;
     return { ok: true as const, appointmentId: appointment.id, staff };
@@ -248,19 +271,31 @@ export async function ownerAvailability(serviceId: string, date: string, staffId
   if (tenant.planStatus !== "ONBOARDING") await requireFeature("turnos");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
   const multiStaff = tieneFeature(tenant, "multi_staff");
-  const [service, profile, hours, busy, staffCount] = await Promise.all([
+  const [service, profile, hours] = await Promise.all([
     db.service.findFirst({ where: { id: serviceId, active: true } }),
     db.businessProfile.findFirst(),
     db.workingHour.findMany({ where: { active: true } }),
-    db.appointment.findMany({
-      where: { status: { not: "CANCELADO" }, startsAt: { lte: localDate(date, 1439) }, endsAt: { gte: localDate(date, 0) }, ...(staffId ? { staffId } : {}) },
-      select: { startsAt: true, endsAt: true },
-    }),
-    multiStaff ? db.staff.count({ where: { active: true } }) : Promise.resolve(0),
   ]);
   if (!service || !profile) return [];
+  let capacity = 1;
+  let staffFilter: Record<string, unknown> = {};
+  if (multiStaff) {
+    const activos = await db.staff.findMany({ where: { active: true }, select: { id: true, services: { select: { serviceId: true } } } });
+    if (activos.length) {
+      if (staffId) { staffFilter = { staffId }; capacity = 1; }
+      else {
+        const ofrecen = ofrecenServicio(activos, serviceId);
+        if (!ofrecen.length) return [];
+        staffFilter = { staffId: { in: ofrecen.map((s) => s.id) } };
+        capacity = ofrecen.length;
+      }
+    }
+  }
+  const busy = await db.appointment.findMany({
+    where: { status: { not: "CANCELADO" }, startsAt: { lte: localDate(date, 1439) }, endsAt: { gte: localDate(date, 0) }, ...staffFilter },
+    select: { startsAt: true, endsAt: true },
+  });
   const vacations = (profile.vacations as Vacation[] | null) ?? null;
-  const capacity = staffId ? 1 : Math.max(1, staffCount);
   return computeSlots({ date, durationMinutes: service.durationMinutes, hours, busy, rules: { ...profile, bookingLeadMinutes: 0 }, vacations, capacity });
 }
 
@@ -294,25 +329,28 @@ export async function crearTurnoManual(input: z.infer<typeof manualBookingSchema
   if (isVacation(data.date, vacations)) return { ok: false as const, error: "Ese día el negocio no atiende." };
   const multiStaff = tieneFeature(tenant, "multi_staff");
   const staffActivos = multiStaff
-    ? await db.staff.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" }, select: { id: true } })
+    ? await db.staff.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" }, select: { id: true, services: { select: { serviceId: true } } } })
     : [];
+  const staffOfrecen = ofrecenServicio(staffActivos, service.id);
   const staffPedido = data.staffId?.trim() || null;
-  if (staffPedido && !staffActivos.some((s) => s.id === staffPedido)) return { ok: false as const, error: "Ese profesional no existe." };
+  if (staffPedido && !staffOfrecen.some((s) => s.id === staffPedido)) return { ok: false as const, error: "Ese profesional no atiende este servicio." };
+  if (staffActivos.length && !staffPedido && !staffOfrecen.length) return { ok: false as const, error: "Ese servicio no tiene un profesional asignado." };
+  const staffFilter = staffPedido ? { staffId: staffPedido } : (staffActivos.length ? { staffId: { in: staffOfrecen.map((s) => s.id) } } : {});
   const [busy, hours] = await Promise.all([
     db.appointment.findMany({
-      where: { status: { not: "CANCELADO" }, startsAt: { lte: localDate(data.date, 1439) }, endsAt: { gte: localDate(data.date, 0) }, ...(staffPedido ? { staffId: staffPedido } : {}) },
+      where: { status: { not: "CANCELADO" }, startsAt: { lte: localDate(data.date, 1439) }, endsAt: { gte: localDate(data.date, 0) }, ...staffFilter },
       select: { startsAt: true, endsAt: true },
     }),
     db.workingHour.findMany({ where: { active: true } }),
   ]);
-  const capacity = staffPedido ? 1 : Math.max(1, staffActivos.length);
+  const capacity = staffPedido ? 1 : Math.max(1, staffActivos.length ? staffOfrecen.length : 1);
   const available = computeSlots({ date: data.date, durationMinutes: service.durationMinutes, hours, busy, rules: { ...profile, bookingLeadMinutes: 0 }, vacations, capacity });
   if (!available.includes(data.time)) return { ok: false as const, error: "Ese horario está ocupado o fuera de agenda. Elegí otro." };
   const [h = 0, m = 0] = data.time.split(":").map(Number);
   const startsAt = localDate(data.date, h * 60 + m);
   const endsAt = new Date(startsAt.getTime() + (service.durationMinutes + profile.bufferMinutes) * 60000);
   let staffAsignado: string | null;
-  try { staffAsignado = await resolverStaff(tenant.id, staffActivos, staffPedido, startsAt, endsAt); }
+  try { staffAsignado = await resolverStaff(tenant.id, staffOfrecen, staffPedido, startsAt, endsAt); }
   catch { return { ok: false as const, error: "Ese horario está ocupado. Elegí otro." }; }
   try {
     const appointment = await db.$transaction(async (tx) => {
@@ -369,6 +407,22 @@ export async function saveProfile(input: { name: string; phone?: string; address
   revalidatePath(`/${tenant.slug}`);
 }
 
+// Logo del negocio: imagen chica como data URL (el cliente la redimensiona a
+// ≤512px antes de mandar). null = quitar el logo.
+export async function saveLogo(dataUrl: string | null): Promise<{ ok: true } | { ok: false; error: string }> {
+  const tenant = await getCurrentTenant();
+  if (dataUrl !== null) {
+    if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(dataUrl)) {
+      return { ok: false, error: "El logo tiene que ser una imagen PNG, JPG o WebP." };
+    }
+    if (dataUrl.length > 400_000) return { ok: false, error: "El logo es muy pesado. Probá con una imagen más chica." };
+  }
+  await db.businessProfile.update({ where: { tenantId: tenant.id }, data: { logoUrl: dataUrl } });
+  revalidatePath("/app");
+  revalidatePath(`/${tenant.slug}`);
+  return { ok: true };
+}
+
 // Aviso por email al dueño cada vez que entra una reserva (opt-in). Va al mail
 // que elija, sin importar si el cliente cargó o no el suyo.
 export async function saveNotifications(input: { notifyOnBooking: boolean; notifyEmail: string }): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -386,18 +440,30 @@ export async function saveNotifications(input: { notifyOnBooking: boolean; notif
 }
 
 // ── Profesionales (multi_staff, plan Turnos Pro) ───────────────────────────
-export async function saveStaff(input: { id?: string; name: string; emoji?: string; active?: boolean }): Promise<{ ok: true } | { ok: false; error: string }> {
+// Setea los servicios que ofrece un profesional (vacío = ofrece todos).
+async function setStaffServicios(staffId: string, serviceIds: string[]) {
+  await db.staffService.deleteMany({ where: { staffId } });
+  const validos = serviceIds.length
+    ? await db.service.findMany({ where: { id: { in: serviceIds } }, select: { id: true } })
+    : [];
+  if (validos.length) await db.staffService.createMany({ data: validos.map((s) => ({ staffId, serviceId: s.id })), skipDuplicates: true });
+}
+
+export async function saveStaff(input: { id?: string; name: string; emoji?: string; active?: boolean; serviceIds?: string[] }): Promise<{ ok: true } | { ok: false; error: string }> {
   const tenant = await getCurrentTenant();
   if (!tieneFeature(tenant, "multi_staff")) return { ok: false, error: "Los profesionales son parte de Turnos Pro." };
   const name = input.name.trim();
   if (name.length < 2) return { ok: false, error: "Poné el nombre del profesional." };
+  let staffId = input.id;
   if (input.id) {
     await db.staff.update({ where: { id: input.id }, data: { name, emoji: input.emoji || undefined, ...(input.active === undefined ? {} : { active: input.active }) } });
   } else {
     const count = await db.staff.count();
     if (count >= MAX_STAFF) return { ok: false, error: `Con Turnos Pro podés cargar hasta ${MAX_STAFF} profesionales.` };
-    await db.staff.create({ data: { tenantId: tenant.id, name, emoji: input.emoji || "💈", sortOrder: count } });
+    const nuevo = await db.staff.create({ data: { tenantId: tenant.id, name, emoji: input.emoji || "💈", sortOrder: count } });
+    staffId = nuevo.id;
   }
+  if (input.serviceIds && staffId) await setStaffServicios(staffId, input.serviceIds);
   revalidatePath("/app");
   revalidatePath(`/${tenant.slug}`);
   return { ok: true };
