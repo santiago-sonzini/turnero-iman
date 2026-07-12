@@ -31,13 +31,15 @@ export function Panel({ plan, acceso, hasMp, mpReady, prices }: any) {
 
   const estado = acceso.estado === "pleno"
     ? { clase: "aldia", label: "Al día" }
+    : acceso.estado === "cancelado"
+      ? { clase: "vencida", label: "Cancelada" }
     : acceso.estado === "gracia"
       ? { clase: "letoca", label: "Pago pendiente" }
       : { clase: "vencida", label: "Pausada" };
 
   return <main>
     <p className="eyebrow">TU SUSCRIPCIÓN</p>
-    <h1>{acceso.estado === "bloqueado" ? "Reactivá tu agenda" : "Todo bajo control"}</h1>
+    <h1>{acceso.estado === "cancelado" ? "Suscripción cancelada" : acceso.estado === "bloqueado" ? "Reactivá tu agenda" : "Todo bajo control"}</h1>
     <div className="tarjeta-fila" style={{ cursor: "default" }}>
       <span className="emo">💳</span>
       <div className="info">
@@ -47,9 +49,18 @@ export function Panel({ plan, acceso, hasMp, mpReady, prices }: any) {
       <span className={`sem ${estado.clase}`}><i className="pto" />{estado.label}</span>
     </div>
     {acceso.diasTrial && <div className="hint"><span className="hint-emo">⏳</span><div><b>{acceso.diasTrial} día{acceso.diasTrial === 1 ? "" : "s"} de prueba</b><p>Dejá el débito listo hoy: con el trial de Mercado Pago no se cobra nada hasta que termine.</p></div></div>}
+    {acceso.estado === "cancelado" && <div className="hint">
+      <span className="hint-emo">{acceso.verificarMercadoPago ? "⚠️" : "✓"}</span>
+      <div>
+        <b>{acceso.verificarMercadoPago ? "Verificá la cancelación en Mercado Pago" : "La renovación quedó cancelada"}</b>
+        <p>{acceso.verificarMercadoPago
+          ? `La baja quedó guardada y podés usar Imán Turnos hasta el ${new Intl.DateTimeFormat("es-AR", { dateStyle: "long" }).format(new Date(acceso.hasta))}, pero no pudimos confirmarla en Mercado Pago. Revisá allí que el débito automático figure cancelado.`
+          : `Podés seguir usando Imán Turnos hasta el ${new Intl.DateTimeFormat("es-AR", { dateStyle: "long" }).format(new Date(acceso.hasta))}. Después no habrá una nueva renovación.`}</p>
+      </div>
+    </div>}
     {mpReady
       ? <button className="btn btn-acento block" onClick={pay} disabled={!!loading}>
-        <CreditCard /> {loading === "mp" ? "Abriendo Mercado Pago…" : hasMp ? "Gestionar en Mercado Pago" : "Configurar débito automático"}
+        <CreditCard /> {loading === "mp" ? "Abriendo Mercado Pago…" : acceso.estado === "cancelado" ? "Volver a suscribirme" : hasMp ? "Gestionar en Mercado Pago" : "Configurar débito automático"}
       </button>
       : <div className="hint"><span className="hint-emo">🔌</span><div><b>Mercado Pago no está conectado</b><p>Configurá MP_ACCESS_TOKEN y NEXT_PUBLIC_APP_URL (https) en el servidor para habilitar el débito automático.</p></div></div>}
 
@@ -66,7 +77,7 @@ export function Panel({ plan, acceso, hasMp, mpReady, prices }: any) {
 
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 25 }}>
       <Link className="bk-volver" href="/app"><ArrowLeft /> Volver a la agenda</Link>
-      {hasMp && <button className="bk-volver" style={{ color: "var(--rojo)" }} disabled={!!loading} onClick={cancel}>Cancelar suscripción</button>}
+      {hasMp && acceso.estado !== "cancelado" && <button className="bk-volver" style={{ color: "var(--rojo)" }} disabled={!!loading} onClick={cancel}>Cancelar suscripción</button>}
     </div>
   </main>;
 }

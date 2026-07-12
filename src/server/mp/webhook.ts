@@ -5,7 +5,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { systemDb } from "@/server/db";
-import { DIAS_GRACIA } from "@/server/plans";
+import { DIAS_GRACIA, finPeriodoSuscripcion } from "@/server/plans";
 import { trackFor } from "@/server/track";
 import {
   appUrl,
@@ -117,11 +117,20 @@ export async function sincronizarPreapproval(pre: MpPreapproval, tenantIdHint?: 
 
   switch (pre.status) {
     case "authorized":
+      // Un webhook anterior a la baja puede llegar tarde. Si se trata de la
+      // misma suscripción que el dueño canceló localmente, no la reactivamos.
+      if (
+        tenant.planStatus === "CANCELLED" &&
+        tenant.cancellationEffectiveAt &&
+        tenant.mpPreapprovalId === pre.id
+      ) break;
       // Autorizó el débito: si el trial sigue corriendo queda TRIALING (el
       // primer cobro llega en start_date); si no, ACTIVE. Recién acá se abre el
       // acceso del flujo con pago, así que damos por cerrado el onboarding.
       data.planStatus = enTrial ? "TRIALING" : "ACTIVE";
       data.graceUntil = null;
+      data.cancellationEffectiveAt = null;
+      data.mpCancellationPending = false;
       data.onboardingStep = "listo";
       if (tenant.planStatus !== "ACTIVE" && tenant.planStatus !== "TRIALING") {
         await trackFor(tenant.id, "suscripcion_autorizada", { preapproval: pre.id });
@@ -135,6 +144,14 @@ export async function sincronizarPreapproval(pre: MpPreapproval, tenantIdHint?: 
       break;
     case "cancelled":
       data.planStatus = "CANCELLED";
+      data.mpCancellationPending = false;
+      if (!tenant.cancellationEffectiveAt) {
+        const proximoCobro = pre.next_payment_date ? new Date(pre.next_payment_date) : null;
+        data.cancellationEffectiveAt =
+          proximoCobro && !Number.isNaN(proximoCobro.getTime()) && proximoCobro > ahora
+            ? proximoCobro
+            : finPeriodoSuscripcion(tenant, ahora);
+      }
       await trackFor(tenant.id, "suscripcion_cancelada", { preapproval: pre.id });
       break;
     case "pending":
@@ -152,9 +169,15 @@ async function aplicarResultadoPago(
 ): Promise<void> {
   const ahora = new Date();
   if (aprobado) {
+    const tenant = await systemDb.tenant.findUnique({ where: { id: tenantId } });
+    // Un pago/webhook demorado no debe deshacer una baja solicitada. Guardamos
+    // el pago para auditoría pero mantenemos CANCELLED y su fecha efectiva.
+    const bajaProgramada = tenant?.planStatus === "CANCELLED" && !!tenant.cancellationEffectiveAt;
     await systemDb.tenant.update({
       where: { id: tenantId },
-      data: { planStatus: "ACTIVE", mpLastPaymentAt: ahora, graceUntil: null },
+      data: bajaProgramada
+        ? { mpLastPaymentAt: ahora }
+        : { planStatus: "ACTIVE", mpLastPaymentAt: ahora, graceUntil: null },
     });
     await trackFor(tenantId, "pago_aprobado", props);
   } else {

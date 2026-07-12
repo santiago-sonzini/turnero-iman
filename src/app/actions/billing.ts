@@ -4,7 +4,7 @@
 // acá solo se crea/cambia/cancela y se refleja lo verificado contra la API.
 import { db, systemDb, DEMO_MODE } from "@/server/db";
 import { getCurrentTenant } from "@/server/tenant-context";
-import { DIAS_TRIAL, PLANES, formatoArs } from "@/server/plans";
+import { DIAS_TRIAL, PLANES, finPeriodoSuscripcion, formatoArs } from "@/server/plans";
 import {
   actualizarMonto,
   appUrl,
@@ -183,33 +183,77 @@ export async function cambiarPlan(nuevo: PlanTier): Promise<ResultadoPlan> {
   return { ok: true, initPoint: null };
 }
 
-/** Cancela el débito en MP y bloquea features pagas. Los datos NO se tocan. */
+/**
+ * Registra primero la baja local y después cancela el débito en MP. Los datos
+ * no se tocan y el acceso sigue habilitado hasta el fin del ciclo ya abonado.
+ */
 export async function cancelarSuscripcion(): Promise<ResultadoPlan> {
   const tenant = await getCurrentTenant();
+  const ahora = new Date();
+  let finAcceso = finPeriodoSuscripcion(tenant, ahora);
+  const debeCancelarEnMp = !!tenant.mpPreapprovalId;
 
-  if (tenant.mpPreapprovalId && mpConfigurado()) {
-    try {
-      await cancelarSuscripcionMp(tenant.mpPreapprovalId);
-    } catch (e) {
-      // Si ya estaba cancelada en MP, seguimos igual. Si no, avisamos y NO
-      // cortamos el acceso (para no dejar "cancelado" pero MP cobrando).
-      try {
-        const pre = await obtenerSuscripcion(tenant.mpPreapprovalId);
-        if (pre.status !== "cancelled") {
-          console.error("[mp] error cancelando", e);
-          return { ok: false, error: "No pudimos cancelar en Mercado Pago. Probá de nuevo en un momento." };
-        }
-      } catch (e2) {
-        console.error("[mp] error cancelando (y no pudimos verificar el estado)", e, e2);
-        return { ok: false, error: "No pudimos cancelar en Mercado Pago. Probá de nuevo en un momento." };
-      }
-    }
-  }
+  // Este update debe ocurrir ANTES de cualquier escritura en Mercado Pago: la
+  // intención de baja queda guardada aunque MP esté caído o sin configurar.
   await db.tenant.update({
     where: { id: tenant.id },
-    data: { planStatus: "CANCELLED" },
+    data: {
+      planStatus: "CANCELLED",
+      cancellationEffectiveAt: finAcceso,
+      mpCancellationPending: debeCancelarEnMp,
+    },
   });
   await track("suscripcion_cancelada", { manual: true });
+
+  if (tenant.mpPreapprovalId && mpConfigurado()) {
+    let canceladaEnMp = false;
+
+    // Leemos el próximo cobro antes de anular la preapproval: esa es la fecha
+    // exacta de cierre del período vigente informada por Mercado Pago. La baja
+    // ya está guardada localmente, por lo que esta consulta no altera el orden.
+    try {
+      const preActual = await obtenerSuscripcion(tenant.mpPreapprovalId);
+      const proximoCobro = preActual.next_payment_date ? new Date(preActual.next_payment_date) : null;
+      if (proximoCobro && !Number.isNaN(proximoCobro.getTime()) && proximoCobro > ahora) {
+        finAcceso = proximoCobro;
+        await db.tenant.update({
+          where: { id: tenant.id },
+          data: { cancellationEffectiveAt: finAcceso },
+        });
+      }
+    } catch (e) {
+      // No impide la baja: conservamos el cierre calculado con el último pago.
+      console.error("[mp] no se pudo obtener el fin exacto del período", e);
+    }
+
+    try {
+      const pre = await cancelarSuscripcionMp(tenant.mpPreapprovalId);
+      canceladaEnMp = pre.status === "cancelled";
+      const proximoCobro = pre.next_payment_date ? new Date(pre.next_payment_date) : null;
+      if (proximoCobro && !Number.isNaN(proximoCobro.getTime()) && proximoCobro > ahora) {
+        finAcceso = proximoCobro;
+      }
+    } catch (e) {
+      // Una respuesta fallida puede ser un reintento sobre una suscripción que
+      // MP ya canceló. Verificamos, pero la baja local nunca se revierte.
+      try {
+        const pre = await obtenerSuscripcion(tenant.mpPreapprovalId);
+        canceladaEnMp = pre.status === "cancelled";
+      } catch (e2) {
+        console.error("[mp] error cancelando (y no pudimos verificar el estado)", e, e2);
+      }
+      if (!canceladaEnMp) console.error("[mp] la baja local quedó pendiente de verificar", e);
+    }
+
+    await db.tenant.update({
+      where: { id: tenant.id },
+      data: {
+        cancellationEffectiveAt: finAcceso,
+        mpCancellationPending: !canceladaEnMp,
+      },
+    });
+  }
+
   return { ok: true, initPoint: null };
 }
 

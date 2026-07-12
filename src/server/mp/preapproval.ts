@@ -77,6 +77,7 @@ export type MpPreapproval = {
   preapproval_plan_id?: string; // si nació de un plan, apunta al plan
   payer_email?: string;
   reason?: string;
+  next_payment_date?: string;
   auto_recurring?: {
     frequency: number;
     frequency_type: "months" | "days";

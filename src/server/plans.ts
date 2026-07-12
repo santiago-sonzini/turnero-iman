@@ -8,6 +8,28 @@ export type PlanDef = { tier: PlanTier; nombre: string; descripcion: string; pre
 // Tope de profesionales que puede cargar un negocio con multi_staff.
 export const MAX_STAFF = 3;
 
+function sumarMesCalendario(fecha: Date): Date {
+  const dia = fecha.getUTCDate();
+  const siguiente = new Date(fecha);
+  siguiente.setUTCDate(1);
+  siguiente.setUTCMonth(siguiente.getUTCMonth() + 1);
+  const ultimoDia = new Date(Date.UTC(siguiente.getUTCFullYear(), siguiente.getUTCMonth() + 1, 0)).getUTCDate();
+  siguiente.setUTCDate(Math.min(dia, ultimoDia));
+  return siguiente;
+}
+
+/** Fin del ciclo mensual vigente; el trial, si sigue activo, tiene prioridad. */
+export function finPeriodoSuscripcion(
+  tenant: Pick<Tenant, "trialEndsAt" | "mpLastPaymentAt">,
+  ahora = new Date()
+): Date {
+  if (tenant.trialEndsAt && tenant.trialEndsAt > ahora) return tenant.trialEndsAt;
+  let fin = new Date(tenant.mpLastPaymentAt ?? ahora);
+  do fin = sumarMesCalendario(fin);
+  while (fin <= ahora);
+  return fin;
+}
+
 export const PLANES: Record<PlanTier, PlanDef> = {
   TURNOS: {
     tier: "TURNOS", nombre: "Turnos", precioArs: 15_000,
@@ -29,6 +51,7 @@ export type Acceso =
   | { estado: "onboarding" }
   | { estado: "pleno"; diasTrial?: number }
   | { estado: "gracia"; hasta: Date }
+  | { estado: "cancelado"; hasta: Date; verificarMercadoPago: boolean }
   | { estado: "bloqueado"; motivo: "trial_vencido" | "pago_vencido" | "cancelado" };
 
 export function accesoDe(tenant: Tenant, now = new Date()): Acceso {
@@ -41,6 +64,13 @@ export function accesoDe(tenant: Tenant, now = new Date()): Acceso {
   if (tenant.planStatus === "PAST_DUE") {
     if (tenant.graceUntil && tenant.graceUntil > now) return { estado: "gracia", hasta: tenant.graceUntil };
     return { estado: "bloqueado", motivo: "pago_vencido" };
+  }
+  if (tenant.planStatus === "CANCELLED" && tenant.cancellationEffectiveAt && tenant.cancellationEffectiveAt > now) {
+    return {
+      estado: "cancelado",
+      hasta: tenant.cancellationEffectiveAt,
+      verificarMercadoPago: tenant.mpCancellationPending,
+    };
   }
   return { estado: "bloqueado", motivo: "cancelado" };
 }

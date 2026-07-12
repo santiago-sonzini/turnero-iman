@@ -537,7 +537,7 @@ button.tarjeta-fila:active,a.tarjeta-fila:active{transform:translateY(2px)}
 .plan-opt .sub{font-size:.8rem;color:var(--tinta-suave);font-weight:600;line-height:1.35}
 .plan-check{width:24px;height:24px;flex:none;color:var(--acento)}
 .plan-check svg{width:24px;height:24px}
-.plan-badge{font-style:normal;font-size:.6rem;font-weight:900;background:var(--acento);color:#fff;
+.plan-badge{display:inline-block;white-space:nowrap;font-style:normal;font-size:.6rem;font-weight:900;background:var(--acento);color:#fff;
   border-radius:99px;padding:2px 7px;margin-left:4px;vertical-align:middle}
 .campo input[type=color]{padding:6px;height:52px}
 .mini-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;border:var(--borde);border-radius:12px;
@@ -557,12 +557,17 @@ button.tarjeta-fila:active,a.tarjeta-fila:active{transform:translateY(2px)}
   --crema:#F4F5F7; --tinta:#242A33; --tinta-suave:#69707d; --blanco:#FFFFFF;
   --borde:2px solid #242A33; --sombra-dura:0 3px 0 rgba(36,42,51,.14);
   --display:'Segoe UI',system-ui,-apple-system,Roboto,sans-serif;
+  /* Derivadas: se computan en :root con el blanco claro; hay que redeclararlas
+     acá para que el color-mix use el --blanco de ESTE tema. */
+  --acento-suave:color-mix(in srgb,var(--acento) 10%,var(--blanco));
 }
 /* "noche": modo oscuro cálido, moderno. */
 .bk[data-theme="noche"]{
   --crema:#151210; --tinta:#F1E9DE; --tinta-suave:#9a8f84; --blanco:#221E19;
   --linea:#3b342d; --rojo:#F2705B;
   --borde:2px solid #3b342d; --sombra-dura:0 4px 0 rgba(0,0,0,.5); color:#F1E9DE;
+  /* Derivadas (ver nota en "profesional"): recomputadas con el blanco oscuro. */
+  --acento-suave:color-mix(in srgb,var(--acento) 22%,var(--blanco));
 }
 .bk[data-theme="noche"] .powered,.bk[data-theme="noche"] .bk-foot{color:var(--tinta-suave)}
 /* Tarjetas con fondo claro fijo: el texto vuelve a tinta oscura para que se lea. */
@@ -774,8 +779,9 @@ button.tarjeta-fila:active,a.tarjeta-fila:active{transform:translateY(2px)}
 .bk-foot a:hover b{text-decoration:underline;text-underline-offset:3px}
 
 /* ---------- suscripción ---------------------------------------------------- */
-.sus{max-width:480px;margin:0 auto;min-height:100svh;padding:18px 18px 40px}
+.sus{width:100%;max-width:480px;margin:0 auto;min-height:100svh;padding:18px 18px 40px;overflow-x:clip}
 .sus-brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+.sus-brand>div,.sus section,.hint>div{min-width:0}
 .sus-brand b{font-family:var(--display);font-weight:600;font-size:1.15rem;display:block;line-height:1.15}
 .sus-brand small{color:var(--tinta-suave);font-size:.72rem;font-weight:700}
 .sus h1{font-size:1.7rem;margin-bottom:16px}
@@ -810,6 +816,28 @@ button.tarjeta-fila:active,a.tarjeta-fila:active{transform:translateY(2px)}
   background:var(--blanco);display:grid;place-items:center;color:var(--acento-on)}
 .svc-pick.on .tick{background:var(--acento)}
 .svc-pick .tick svg{width:18px;height:18px}
+
+/* El onboarding tiene varios controles rígidos en una misma fila. En móviles
+   angostos los compactamos sin permitir que ensanchen el documento (Safari
+   conserva ese scroll horizontal al avanzar de paso y deja todo recortado). */
+@media(max-width:420px){
+  .sus{padding-inline:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+  .sus h1{font-size:clamp(1.55rem,7.5vw,1.7rem);overflow-wrap:anywhere}
+  .svc-pick{display:grid;grid-template-columns:42px minmax(0,1fr) auto 44px;gap:8px;padding:10px}
+  .svc-pick .price{padding-inline:6px}
+  .svc-pick .price input{width:clamp(48px,14vw,60px)}
+  .svc-pick .tick{width:44px;height:44px}
+  .plan-opt{gap:8px;padding:12px 10px}
+  .plan-opt .nom{overflow-wrap:anywhere}
+}
+
+@media(max-width:350px){
+  .sus-brand{flex-wrap:wrap}
+  .sus-brand .chip{font-size:.72rem;padding:.28rem .55rem}
+  .svc-pick{grid-template-columns:38px minmax(0,1fr) auto 44px;gap:6px;padding-inline:8px}
+  .svc-pick .emo{width:38px;height:38px}
+  .svc-pick .price input{width:44px}
+}
 
 /* ---------- escritorio ----------------------------------------------------- */
 @media(min-width:900px){

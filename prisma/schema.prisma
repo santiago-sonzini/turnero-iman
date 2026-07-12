@@ -85,6 +85,8 @@ model Tenant {
   mpPreapprovalPlanId String? @unique
   mpPayerEmail String?
   mpLastPaymentAt DateTime?
+  cancellationEffectiveAt DateTime?
+  mpCancellationPending Boolean @default(false)
   addons String[] @default([])
   onboardingStep String @default("negocio")
   revealSnapshot Json?
