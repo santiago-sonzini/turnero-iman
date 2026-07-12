@@ -59,7 +59,7 @@ export function Panel({ plan, acceso, hasMp, mpReady, prices }: any) {
     </button>}
     {plan !== "TURNOS_AUTO" && <button className="tarjeta-fila" disabled={!!loading} onClick={() => change("TURNOS_AUTO")}>
       <span className="emo"><Sparkles /></span>
-      <div className="info"><span className="nom">Turnos Auto</span><span className="sub">{prices.TURNOS_AUTO}/mes · Mensajes automáticos</span></div>
+      <div className="info"><span className="nom">Turnos Auto</span><span className="sub">{prices.TURNOS_AUTO}/mes · Hasta 3 profesionales y temas</span></div>
     </button>}
     {error && <p className="form-error">{error}</p>}
 

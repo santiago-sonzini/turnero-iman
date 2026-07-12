@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, LogOut, MessageCircle, Plus, Scissors, Settings, Share2, Sparkles, Trash2, Users, X } from "lucide-react";
-import { acceptWhatsappRisk, createPromotion, crearTurnoManual, ownerAvailability, queueGapFill, saveBookingSettings, saveNotifications, saveProfile, saveService, setAppointmentStatus } from "@/app/actions/turnos";
+import { acceptWhatsappRisk, createPromotion, crearTurnoManual, deleteStaff, ownerAvailability, queueGapFill, saveBookingSettings, saveNotifications, saveProfile, saveService, saveStaff, saveTheme, setAppointmentStatus } from "@/app/actions/turnos";
 import { signOut } from "@/app/actions/auth";
 import { MagnetLogo } from "./magnet-logo";
 import Image from "next/image";
@@ -46,7 +46,7 @@ export function AppShell({ data }: { data: any }) {
         {screen === "clientes" && <Clients clients={data.clients} profile={data.profile} />}
         {screen === "promos" && <Promos promotions={data.promotions} slug={data.tenant.slug} onCreate={() => setSheet({ type: "promo" })} />}
         {screen === "servicios" && <Services services={data.services} hours={data.workingHours} onCreate={() => setSheet({ type: "service" })} />}
-        {screen === "ajustes" && <SettingsScreen data={data} onEdit={() => setSheet({ type: "profile" })} onWhatsapp={() => setSheet({ type: "whatsapp" })} onBooking={() => setSheet({ type: "booking" })} onNotif={() => setSheet({ type: "notif" })} />}
+        {screen === "ajustes" && <SettingsScreen data={data} onEdit={() => setSheet({ type: "profile" })} onWhatsapp={() => setSheet({ type: "whatsapp" })} onBooking={() => setSheet({ type: "booking" })} onNotif={() => setSheet({ type: "notif" })} onStaff={() => setSheet({ type: "staff" })} onTheme={() => setSheet({ type: "theme" })} />}
       </main>
 
       {screen === "agenda" && <button className="fab fab-txt" aria-label="Crear turno" onClick={() => setSheet({ type: "manual" })}><Plus /> Crear turno</button>}
@@ -67,9 +67,11 @@ export function AppShell({ data }: { data: any }) {
         {sheet.type === "profile" && <ProfileSheet close={close} profile={data.profile} />}
         {sheet.type === "whatsapp" && <WhatsappSheet close={close} qr={data.whatsapp?.qrCode} eligible={data.tenant.plan === "TURNOS_AUTO"} accepted={!!data.tenant.whatsappRiskAcceptedAt} />}
         {sheet.type === "booking" && <BookingSettingsSheet close={close} tenant={data.tenant} profile={data.profile} />}
-        {sheet.type === "manual" && <ManualSheet close={close} services={data.services} clients={data.clients} />}
-        {sheet.type === "share" && <ShareSheet close={close} slug={data.tenant.slug} name={data.profile?.name ?? data.tenant.name} />}
+        {sheet.type === "manual" && <ManualSheet close={close} services={data.services} clients={data.clients} staff={data.staff ?? []} />}
+        {sheet.type === "share" && <ShareSheet close={close} slug={data.tenant.slug} name={data.profile?.name ?? data.tenant.name} staff={data.staff ?? []} />}
         {sheet.type === "notif" && <NotificationsSheet close={close} profile={data.profile} />}
+        {sheet.type === "staff" && <StaffSheet close={close} staff={data.staff ?? []} />}
+        {sheet.type === "theme" && <ThemeSheet close={close} profile={data.profile} />}
       </>}</Sheet>}
     </div>
   );
@@ -206,7 +208,7 @@ function AppointmentCard({ appointment: a, onClick }: any) {
     <span className="ava">{initials(a.client.name)}</span>
     <span className="info">
       <span className="nom">{a.client.name}</span>
-      <span className="det">{a.service.emoji} {a.service.name}
+      <span className="det">{a.service.emoji} {a.service.name}{a.staff ? ` · ${a.staff.emoji} ${a.staff.name}` : ""}
         {a.status === "ASISTIO" && <span className="estado-pill ok">✓ asistió</span>}
         {a.status === "NO_VINO" && <span className="estado-pill no">no vino</span>}
       </span>
@@ -332,7 +334,9 @@ function Services({ services, hours, onCreate }: any) {
   </>;
 }
 
-function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif }: any) {
+function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff, onTheme }: any) {
+  const auto = data.tenant.plan === "TURNOS_AUTO" || (data.tenant.addons ?? []).includes("multi_staff");
+  const temaLabel: Record<string, string> = { clasico: "Clásico", profesional: "Profesional", noche: "Noche" };
   const router = useRouter();
   const [pending, start] = useTransition();
   const [leaving, startLeaving] = useTransition();
@@ -366,11 +370,21 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif }: any) {
         <button key={c} aria-label={`Usar color ${c}`} disabled={pending} onClick={() => setAccent(c)} style={{ background: c }} className={`tema-sw ${c.toLowerCase() === String(data.profile.accent).toLowerCase() ? "sel" : ""}`} />)}
     </div>
     <div className="seccion-tit"><h2>Turnos Auto</h2></div>
-    <button className="tarjeta-fila" onClick={onWhatsapp}>
-      <span className={`health ${health.toLowerCase()}`} />
-      <div className="info"><span className="nom">WhatsApp automático</span><span className="sub">{health === "CONNECTED" ? "Conectado y saludable" : health === "QR_PENDING" ? "Esperando que escanees el QR" : "Desconectado · usa links wa.me"}</span></div>
+    {auto && <button className="tarjeta-fila" onClick={onStaff}>
+      <span className="emo">💈</span>
+      <div className="info"><span className="nom">Profesionales</span><span className="sub">{data.staff?.length ? `${data.staff.length} cargado${data.staff.length === 1 ? "" : "s"} · cada uno con su agenda` : "Sumá hasta 3 y el cliente elige"}</span></div>
       <ChevronRight />
-    </button>
+    </button>}
+    {auto && <button className="tarjeta-fila" onClick={onTheme}>
+      <span className="emo">🎨</span>
+      <div className="info"><span className="nom">Tema visual</span><span className="sub">{temaLabel[data.profile.theme ?? "clasico"] ?? "Clásico"} · el estilo de tu página</span></div>
+      <ChevronRight />
+    </button>}
+    {!auto && <a className="tarjeta-fila" href="/suscripcion">
+      <span className="emo">✨</span>
+      <div className="info"><span className="nom">Subí a Turnos Auto</span><span className="sub">Hasta 3 profesionales y temas visuales para tu página</span></div>
+      <ChevronRight />
+    </a>}
     <a className="tarjeta-fila" href="/suscripcion">
       <span className="emo">💳</span>
       <div className="info"><span className="nom">Suscripción</span><span className="sub">Plan, débito automático y facturación</span></div>
@@ -627,11 +641,12 @@ function BookingSettingsSheet({ tenant, profile, close }: any) {
   </>;
 }
 
-function ManualSheet({ services, clients, close }: any) {
+function ManualSheet({ services, clients, staff = [], close }: any) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const activos = useMemo(() => services.filter((s: any) => s.active), [services]);
   const [serviceId, setServiceId] = useState(activos[0]?.id ?? "");
+  const [staffId, setStaffId] = useState("");
   const [date, setDate] = useState(() => localDay(new Date()));
   const [time, setTime] = useState("");
   const [slots, setSlots] = useState<string[]>([]);
@@ -640,17 +655,17 @@ function ManualSheet({ services, clients, close }: any) {
   const [tel, setTel] = useState("");
   const [error, setError] = useState("");
 
-  // Recalcula horarios libres cada vez que cambia servicio o día.
+  // Recalcula horarios libres cada vez que cambia servicio, profesional o día.
   useEffect(() => {
     if (!serviceId || !date) { setSlots([]); return; }
     let vivo = true;
     setLoadingSlots(true); setTime("");
-    ownerAvailability(serviceId, date)
+    ownerAvailability(serviceId, date, staffId || undefined)
       .then((s) => { if (vivo) setSlots(s); })
       .catch(() => { if (vivo) setSlots([]); })
       .finally(() => { if (vivo) setLoadingSlots(false); });
     return () => { vivo = false; };
-  }, [serviceId, date]);
+  }, [serviceId, date, staffId]);
 
   // Si el nombre coincide con un cliente existente, autocompleta su teléfono.
   const pickName = (v: string) => {
@@ -666,7 +681,7 @@ function ManualSheet({ services, clients, close }: any) {
     if (name.trim().length < 2) return setError("Poné el nombre del cliente.");
     if (tel.replace(/\D/g, "").length < 6) return setError("Poné un WhatsApp válido.");
     start(async () => {
-      const r = await crearTurnoManual({ serviceId, date, time, name, phone: tel });
+      const r = await crearTurnoManual({ serviceId, date, time, name, phone: tel, staffId: staffId || undefined });
       if (!r.ok) { setError(r.error); return; }
       router.refresh();
       close();
@@ -682,6 +697,12 @@ function ManualSheet({ services, clients, close }: any) {
           {activos.map((s: any) => <option key={s.id} value={s.id}>{s.emoji} {s.name} · {s.durationMinutes} min</option>)}
         </select>
       </div>
+      {staff.length > 0 && <div className="campo"><span>Profesional</span>
+        <select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
+          <option value="">Cualquiera disponible</option>
+          {staff.map((s: any) => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+        </select>
+      </div>}
       <div className="campo"><span>Día</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
       <div className="campo"><span>Horario</span>
         {loadingSlots
@@ -718,7 +739,7 @@ function CopyLinkButton({ path, label, className }: { path: string; label?: stri
   </button>;
 }
 
-function ShareSheet({ slug, name, close }: any) {
+function ShareSheet({ slug, name, staff = [], close }: any) {
   const path = `/${slug}/turnos`;
   const full = () => `${window.location.origin}${path}`;
   const wa = () => window.open(`https://wa.me/?text=${encodeURIComponent(`Reservá tu turno en ${name}: ${full()}`)}`, "_blank");
@@ -731,6 +752,13 @@ function ShareSheet({ slug, name, close }: any) {
       <button className="btn block" onClick={wa}><MessageCircle /> Compartir por WhatsApp</button>
       {canNative && <button className="btn block" onClick={native}><Share2 /> Más opciones…</button>}
       <a className="btn block" href={path} target="_blank" rel="noopener noreferrer"><ExternalLink /> Abrir mi página</a>
+      {staff.length > 0 && <>
+        <p className="share-staff-tit">Link directo por profesional</p>
+        {staff.map((s: any) => <div className="share-link" key={s.id}>
+          <span className="url">{s.emoji} {s.name}</span>
+          <CopyLinkButton path={`${path}?prof=${s.id}`} className="btn sm" label="Copiar" />
+        </div>)}
+      </>}
     </div>
   </>;
 }
@@ -763,6 +791,70 @@ function NotificationsSheet({ profile, close }: any) {
       </div>
       {error && <p className="campo-error">{error}</p>}
       <button className="btn btn-acento block" disabled={pending} onClick={save}>{pending ? "Guardando…" : "Guardar"}</button>
+    </div>
+  </>;
+}
+
+const STAFF_EMOJIS = ["💈", "✂️", "💇", "💅", "🧔", "👩", "🎨", "🪒"];
+function StaffSheet({ staff, close }: any) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [emoji, setEmoji] = useState("💈");
+  const add = () => {
+    setError("");
+    if (nombre.trim().length < 2) { setError("Poné el nombre del profesional."); return; }
+    start(async () => {
+      const r = await saveStaff({ name: nombre, emoji });
+      if (!r.ok) { setError(r.error); return; }
+      setNombre(""); router.refresh();
+    });
+  };
+  const remove = (id: string) => start(async () => { await deleteStaff(id); router.refresh(); });
+  return <>
+    <SheetHead title="Tu equipo" sub="Hasta 3 profesionales, cada uno con su agenda. El cliente elige con quién reservar." onClose={close} />
+    <div className="sheet-body">
+      {staff.length > 0 && <div className="staff-list">
+        {staff.map((s: any) => <div className="staff-row" key={s.id}>
+          <span className="em">{s.emoji}</span><b>{s.name}</b>
+          <button className="staff-del" aria-label={`Quitar ${s.name}`} disabled={pending} onClick={() => remove(s.id)}><Trash2 /></button>
+        </div>)}
+      </div>}
+      {staff.length < 3 ? <>
+        <div className="campo" style={{ marginTop: 12 }}><span>Nuevo profesional</span>
+          <div className="emoji-pick">{STAFF_EMOJIS.map((e) => <button type="button" key={e} className={emoji === e ? "on" : ""} onClick={() => setEmoji(e)}>{e}</button>)}</div>
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Nico" maxLength={40} />
+        </div>
+        {error && <p className="campo-error">{error}</p>}
+        <button className="btn btn-acento block" disabled={pending} onClick={add}><Plus /> Agregar profesional</button>
+      </> : <p className="ayuda">Llegaste al máximo de 3 profesionales.</p>}
+    </div>
+  </>;
+}
+
+const TEMAS_UI = [
+  { id: "clasico", label: "Clásico", desc: "Cálido y con personalidad (el actual).", bg: "#FFF6E9", ink: "#33231A", acc: "#E94F37" },
+  { id: "profesional", label: "Profesional", desc: "Limpio, sobrio, minimal.", bg: "#F4F5F7", ink: "#242A33", acc: "#246BCE" },
+  { id: "noche", label: "Noche", desc: "Modo oscuro, moderno.", bg: "#151210", ink: "#F1E9DE", acc: "#E94F37" },
+];
+function ThemeSheet({ profile, close }: any) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [sel, setSel] = useState(profile.theme ?? "clasico");
+  const [error, setError] = useState("");
+  const pick = (id: string) => { setSel(id); setError(""); start(async () => { const r = await saveTheme(id); if (!r.ok) { setError(r.error); setSel(profile.theme ?? "clasico"); return; } router.refresh(); }); };
+  return <>
+    <SheetHead title="Tema visual" sub="El estilo de tu página pública de reservas" onClose={close} />
+    <div className="sheet-body">
+      <div className="tema-cards">
+        {TEMAS_UI.map((t) => <button key={t.id} className={`tema-card ${sel === t.id ? "on" : ""}`} disabled={pending} onClick={() => pick(t.id)}>
+          <span className="tema-swatch" style={{ background: t.bg, color: t.ink, borderColor: t.ink }}><i style={{ background: t.acc }} />Aa</span>
+          <span className="tema-info"><b>{t.label}</b><small>{t.desc}</small></span>
+          {sel === t.id && <Check />}
+        </button>)}
+      </div>
+      {error && <p className="campo-error">{error}</p>}
     </div>
   </>;
 }

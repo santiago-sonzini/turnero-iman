@@ -10,11 +10,14 @@ import { MagnetLogo } from "./magnet-logo";
 const money = (c: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 0 }).format(c / 100);
 const CONFETI = ["#E94F37", "#FFC53D", "#35B36B", "#246BCE", "#7656D6", "#FFFDF8"];
 
-export function BookingFlow({ initial, promoToken }: { initial: any; promoToken?: string }) {
+export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any; promoToken?: string; preStaffId?: string }) {
+  const staffList: any[] = initial.staff ?? [];
   const [step, setStep] = useState(0);
   const [service, setService] = useState<any>(null);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  // "" = cualquier profesional. Un ?prof= válido lo preselecciona.
+  const [staffId, setStaffId] = useState<string>(preStaffId && staffList.some((s) => s.id === preStaffId) ? preStaffId : "");
   const [saving, start] = useTransition();
   const [result, setResult] = useState<any>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
@@ -28,16 +31,21 @@ export function BookingFlow({ initial, promoToken }: { initial: any; promoToken?
   const days = useMemo(() => Array.from({ length: horizonDays }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d; }), [horizonDays]);
   const openWeekdays = useMemo(() => new Set(initial.hours.map((h: any) => h.weekday)), [initial.hours]);
 
-  // Disponibilidad calculada al instante en el cliente: la página llega del
-  // server con las ventanas ocupadas del horizonte configurado (nada de
-  // "Buscando huecos…"). El server igual re-valida al confirmar.
+  // Disponibilidad al instante en el cliente. Con profesionales: si elegís uno,
+  // cupo 1 y solo su ocupación; "cualquiera" queda libre mientras haya alguno
+  // sin ocupar. El server re-valida y asigna al confirmar.
   const slots = useMemo(() => {
     if (!service || !date) return [];
-    return computeSlots({ date, durationMinutes: service.durationMinutes, hours: initial.hours, busy: initial.busy ?? [], rules: initial.profile, vacations });
-  }, [service, date, initial, vacations]);
+    const busyAll: any[] = initial.busy ?? [];
+    const busy = staffId ? busyAll.filter((b) => b.staffId === staffId) : busyAll;
+    const capacity = staffId ? 1 : Math.max(1, staffList.length);
+    return computeSlots({ date, durationMinutes: service.durationMinutes, hours: initial.hours, busy, rules: initial.profile, vacations, capacity });
+  }, [service, date, staffId, initial, vacations]);
+
+  const staffElegido = staffId ? staffList.find((s) => s.id === staffId) : null;
 
   const submit = () => start(async () => {
-    const r = await bookPublic({ slug: initial.tenant.slug, serviceId: service.id, date, time, ...form, marketingConsent, promoToken });
+    const r = await bookPublic({ slug: initial.tenant.slug, serviceId: service.id, date, time, staffId: staffId || undefined, ...form, marketingConsent, promoToken });
     setResult(r);
     if (r.ok) { setStep(3); window.scrollTo({ top: 0 }); }
   });
@@ -84,7 +92,7 @@ export function BookingFlow({ initial, promoToken }: { initial: any; promoToken?
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   };
 
-  return <main className="bk" style={{ "--acento": initial.profile.accent } as React.CSSProperties}>
+  return <main className="bk" data-theme={initial.profile.theme ?? "clasico"} style={{ "--acento": initial.profile.accent } as React.CSSProperties}>
     <header className="bk-hero">
       <span className="powered"><MagnetLogo /> Imán Turnos</span>
       <div className="foto">{initial.services[0]?.emoji ?? "🧲"}</div>
@@ -115,6 +123,13 @@ export function BookingFlow({ initial, promoToken }: { initial: any; promoToken?
       <button className="bk-volver" onClick={() => setStep(0)}><ArrowLeft /> Cambiar servicio</button>
       <h2 className="bk-titulo">¿Cuándo venís?</h2>
       <p className="bk-sub">{service.emoji} {service.name} · {service.durationMinutes} min</p>
+      {staffList.length > 0 && <div className="prof-picker">
+        <span className="prof-label">¿Con quién?</span>
+        <div className="prof-chips">
+          <button className={`prof-chip ${!staffId ? "on" : ""}`} onClick={() => { setStaffId(""); setTime(""); }}>Cualquiera</button>
+          {staffList.map((s) => <button key={s.id} className={`prof-chip ${staffId === s.id ? "on" : ""}`} onClick={() => { setStaffId(s.id); setTime(""); }}>{s.emoji} {s.name}</button>)}
+        </div>
+      </div>}
       <div className="dias-scroll">
         {days.map((d) => {
           const key = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
@@ -143,6 +158,7 @@ export function BookingFlow({ initial, promoToken }: { initial: any; promoToken?
       <p className="bk-sub">Último paso y el turno queda tuyo.</p>
       <div className="resumen">
         <div className="r-fila"><span className="k">Servicio</span><span className="v">{service.emoji} {service.name}</span></div>
+        {staffList.length > 0 && <div className="r-fila"><span className="k">Con</span><span className="v">{staffElegido ? `${staffElegido.emoji} ${staffElegido.name}` : "Cualquiera disponible"}</span></div>}
         <div className="r-fila"><span className="k">Día</span><span className="v">{prettyDate}</span></div>
         <div className="r-fila"><span className="k">Hora</span><span className="v">{time}</span></div>
         {showPrices && <div className="r-fila r-total"><span className="k">Total</span><span className="v">{money(service.priceCents)}</span></div>}
@@ -189,6 +205,7 @@ export function BookingFlow({ initial, promoToken }: { initial: any; promoToken?
         <p className="sub">{prettyDate} · {time} hs</p>
         <div className="resumen">
           <div className="r-fila"><span className="k">Servicio</span><span className="v">{service.emoji} {service.name}</span></div>
+          {result?.staff && <div className="r-fila"><span className="k">Con</span><span className="v">{result.staff.emoji} {result.staff.name}</span></div>}
           {(initial.profile.address || initial.profile.mapsUrl) && <div className="r-fila"><span className="k">Dónde</span><span className="v">{initial.profile.mapsUrl
             ? <a href={initial.profile.mapsUrl} target="_blank" rel="noopener noreferrer" className="meta-link">{initial.profile.address || "Ver en Maps"}</a>
             : initial.profile.address}</span></div>}

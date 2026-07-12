@@ -194,6 +194,27 @@ body::after{
 .switch-fila input:checked~.switch{background:var(--acento)}
 .switch-fila input:checked~.switch::after{transform:translateX(20px);background:#fff}
 .switch-fila input:focus-visible~.switch{outline:2px solid var(--acento);outline-offset:2px}
+/* equipo (profesionales) */
+.staff-list{display:grid;gap:8px;margin-bottom:4px}
+.staff-row{display:flex;align-items:center;gap:10px;border:var(--borde);border-radius:14px;background:var(--blanco);padding:11px 10px 11px 14px;box-shadow:var(--sombra-dura)}
+.staff-row .em{font-size:1.3rem}
+.staff-row b{flex:1;font-size:.95rem}
+.staff-del{border:0;background:transparent;color:var(--rojo);padding:6px;cursor:pointer}
+.staff-del svg{width:18px;height:18px}
+.emoji-pick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.emoji-pick button{width:40px;height:40px;border:var(--borde);border-radius:12px;background:var(--blanco);font-size:1.15rem;box-shadow:var(--sombra-dura);cursor:pointer}
+.emoji-pick button.on{background:var(--acento-suave);border-color:var(--tinta)}
+/* temas visuales */
+.tema-cards{display:grid;gap:10px}
+.tema-card{display:flex;align-items:center;gap:12px;border:var(--borde);border-radius:16px;background:var(--blanco);padding:12px;box-shadow:var(--sombra-dura);cursor:pointer;text-align:left}
+.tema-card.on{outline:3px solid var(--acento);outline-offset:1px}
+.tema-swatch{position:relative;width:52px;height:52px;flex:none;border:2px solid;border-radius:12px;display:grid;place-items:center;font-family:var(--display);font-weight:900;font-size:1.05rem}
+.tema-swatch i{position:absolute;top:5px;right:5px;width:12px;height:12px;border-radius:50%}
+.tema-info{flex:1}
+.tema-info b{display:block;font-size:.95rem}
+.tema-info small{color:var(--tinta-suave);font-size:.78rem;line-height:1.35}
+.tema-card>svg{width:20px;height:20px;color:var(--acento);flex:none}
+.share-staff-tit{font-weight:900;font-size:.82rem;margin:16px 0 8px;color:var(--tinta)}
 
 /* ---------- agenda -------------------------------------------------------- */
 .fecha-nav{display:flex;align-items:center;gap:6px;justify-content:center;padding:14px 0 6px}
@@ -481,6 +502,19 @@ button.tarjeta-fila:active,a.tarjeta-fila:active{transform:translateY(2px)}
 .campo .campo-error{font-size:.76rem;color:var(--rojo);font-weight:800;margin-top:5px}
 .campo input[aria-invalid=true],.campo select[aria-invalid=true]{border-color:var(--rojo)}
 .campo input[aria-invalid=true]:focus{border-color:var(--rojo)}
+/* selector de plan en el onboarding */
+.plan-opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:var(--borde);
+  border-radius:16px;background:var(--blanco);padding:14px;box-shadow:var(--sombra-dura);margin-bottom:10px;cursor:pointer}
+.plan-opt.on{outline:3px solid var(--acento);outline-offset:1px}
+.plan-opt .emo{display:grid;place-items:center;width:36px;height:36px;flex:none;color:var(--acento)}
+.plan-opt .emo svg{width:23px;height:23px}
+.plan-opt .info{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.plan-opt .nom{font-weight:900;font-size:.95rem}
+.plan-opt .sub{font-size:.8rem;color:var(--tinta-suave);font-weight:600;line-height:1.35}
+.plan-check{width:24px;height:24px;flex:none;color:var(--acento)}
+.plan-check svg{width:24px;height:24px}
+.plan-badge{font-style:normal;font-size:.6rem;font-weight:900;background:var(--acento);color:#fff;
+  border-radius:99px;padding:2px 7px;margin-left:4px;vertical-align:middle}
 .campo input[type=color]{padding:6px;height:52px}
 .mini-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;border:var(--borde);border-radius:12px;
   background:var(--crema);padding:3px;margin-bottom:8px;box-shadow:var(--sombra-dura)}
@@ -492,7 +526,27 @@ button.tarjeta-fila:active,a.tarjeta-fila:active{transform:translateY(2px)}
   padding:10px 12px;font-weight:700;font-size:.88rem;margin:10px 0}
 
 /* ---------- página pública de reservas ------------------------------------ */
-.bk{max-width:480px;margin:0 auto;min-height:100svh;position:relative;padding-bottom:40px}
+.bk{max-width:480px;margin:0 auto;min-height:100svh;position:relative;padding-bottom:40px;background:var(--crema)}
+/* ---------- temas de la página pública (Turnos Auto) ---------------------- */
+/* "clasico" es el default (:root). "profesional": limpio y sobrio. */
+.bk[data-theme="profesional"]{
+  --crema:#F4F5F7; --tinta:#242A33; --tinta-suave:#69707d; --blanco:#FFFFFF;
+  --borde:2px solid #242A33; --sombra-dura:0 3px 0 rgba(36,42,51,.14);
+  --display:'Segoe UI',system-ui,-apple-system,Roboto,sans-serif;
+}
+/* "noche": modo oscuro cálido, moderno. */
+.bk[data-theme="noche"]{
+  --crema:#151210; --tinta:#F1E9DE; --tinta-suave:#9a8f84; --blanco:#221E19;
+  --borde:2px solid #3b342d; --sombra-dura:0 4px 0 rgba(0,0,0,.5); color:#F1E9DE;
+}
+.bk[data-theme="noche"] .powered,.bk[data-theme="noche"] .bk-foot{color:var(--tinta-suave)}
+/* selector de profesional (multi-staff) */
+.prof-picker{margin:2px 0 14px}
+.prof-label{display:block;font-weight:900;font-size:.82rem;margin-bottom:8px;color:var(--tinta)}
+.prof-chips{display:flex;flex-wrap:wrap;gap:8px}
+.prof-chip{border:var(--borde);border-radius:999px;background:var(--blanco);color:var(--tinta);
+  padding:9px 14px;font-weight:800;font-size:.85rem;box-shadow:var(--sombra-dura);cursor:pointer}
+.prof-chip.on{background:var(--acento);color:var(--acento-on);border-color:var(--tinta)}
 .bk-hero{position:relative;background:var(--acento);color:var(--acento-on);
   border-bottom:2.5px solid var(--tinta);padding:26px 20px 24px;overflow:hidden}
 .bk-hero::before{content:"";position:absolute;inset:0;opacity:.5;pointer-events:none;

@@ -94,6 +94,7 @@ model Tenant {
   profile BusinessProfile?
   clients Client[]
   services Service[]
+  staff Staff[]
   workingHours WorkingHour[]
   appointments Appointment[]
   promotions Promotion[]
@@ -129,6 +130,7 @@ model BusinessProfile {
   instagram String?
   timezone String @default("America/Argentina/Buenos_Aires")
   accent String @default("#E94F37")
+  theme String @default("clasico")
   bookingLeadMinutes Int @default(60)
   bookingHorizonDays Int @default(30)
   slotStepMinutes Int @default(15)
@@ -141,6 +143,21 @@ model BusinessProfile {
   cancelWindowHours Int @default(48)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Profesional / peluquero del negocio (plan Turnos Auto, hasta MAX_STAFF).
+model Staff {
+  id String @id @default(cuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name String
+  emoji String @default("💈")
+  active Boolean @default(true)
+  sortOrder Int @default(0)
+  appointments Appointment[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tenantId, active])
 }
 
 model Service {
@@ -200,6 +217,8 @@ model Appointment {
   service Service @relation(fields: [serviceId], references: [id])
   clientId String
   client Client @relation(fields: [clientId], references: [id])
+  staffId String?
+  staff Staff? @relation(fields: [staffId], references: [id], onDelete: SetNull)
   startsAt DateTime @db.Timestamptz(3)
   endsAt DateTime @db.Timestamptz(3)
   status AppointmentStatus @default(CONFIRMADO)
@@ -214,6 +233,7 @@ model Appointment {
   updatedAt DateTime @updatedAt
   @@index([tenantId, startsAt])
   @@index([tenantId, clientId, status])
+  @@index([staffId, startsAt])
 }
 
 model Promotion {

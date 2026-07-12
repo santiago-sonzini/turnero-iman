@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db, systemDb } from "@/server/db";
 import { getCurrentTenant } from "@/server/tenant-context";
 import { requireFeature } from "@/server/gate";
+import { tieneFeature, MAX_STAFF } from "@/server/plans";
 import { computeSlots, isVacation, localDate, type Vacation } from "@/lib/availability";
 import { ensureUniqueSlug, isValidSlug } from "@/lib/slug";
 import { appUrl } from "@/server/mp/preapproval";
@@ -25,7 +26,7 @@ async function enviarEmailsReserva(a: {
   tenant: { name: string; slug: string };
   profile: { accent?: string; address?: string | null; notifyOnBooking?: boolean; notifyEmail?: string | null } | null;
   service: { name: string };
-  clienteNombre: string; clienteEmail: string | null; telefono: string; date: string; time: string;
+  clienteNombre: string; clienteEmail: string | null; telefono: string; date: string; time: string; clientToken?: string;
 }) {
   try {
     const { emailConfigurado, sendEmail } = await import("@/lib/mailer");
@@ -35,10 +36,12 @@ async function enviarEmailsReserva(a: {
     const accent = a.profile?.accent;
     const base = appUrl();
     if (a.clienteEmail) {
+      // ?c=token: el link del email trae los turnos del cliente en cualquier
+      // dispositivo (sin depender de la cookie de quien reservó).
+      const url = a.clientToken ? `${base}/${a.tenant.slug}/turnos?c=${a.clientToken}` : `${base}/${a.tenant.slug}/turnos`;
       const { subject, html } = emailConfirmacionCliente({
         negocio: a.tenant.name, cliente: a.clienteNombre, servicio: a.service.name,
-        fecha, hora: a.time, direccion: a.profile?.address ?? null, accent,
-        url: `${base}/${a.tenant.slug}/turnos`,
+        fecha, hora: a.time, direccion: a.profile?.address ?? null, accent, url,
       });
       await sendEmail({ to: a.clienteEmail, subject, html }).catch((e) => console.error("[email] confirmación cliente falló", e));
     }
@@ -56,42 +59,46 @@ async function enviarEmailsReserva(a: {
 
 export async function getOwnerData(from: Date, to: Date) {
   const tenant = await getCurrentTenant();
-  const [profile, services, workingHours, appointments, clients, promotions, whatsapp] = await Promise.all([
+  const [profile, services, staff, workingHours, appointments, clients, promotions, whatsapp] = await Promise.all([
     db.businessProfile.findFirst(),
     db.service.findMany({ orderBy: { sortOrder: "asc" } }),
+    db.staff.findMany({ orderBy: { sortOrder: "asc" } }),
     db.workingHour.findMany({ orderBy: [{ weekday: "asc" }, { startMinutes: "asc" }] }),
     db.appointment.findMany({
       where: { startsAt: { gte: from, lte: to } },
-      include: { client: true, service: true }, orderBy: { startsAt: "asc" },
+      include: { client: true, service: true, staff: true }, orderBy: { startsAt: "asc" },
     }),
     db.client.findMany({ include: { appointments: { where: { status: "ASISTIO" }, orderBy: { startsAt: "desc" }, take: 8 } }, orderBy: { name: "asc" } }),
     db.promotion.findMany({ include: { service: true }, orderBy: { createdAt: "desc" } }),
     db.whatsappSession.findFirst(),
   ]);
-  return { tenant, profile, services, workingHours, appointments, clients, promotions, whatsapp };
+  return { tenant, profile, services, staff, workingHours, appointments, clients, promotions, whatsapp };
 }
 
-export async function getPublicBooking(slug: string, promoToken?: string) {
+export async function getPublicBooking(slug: string, promoToken?: string, clientToken?: string) {
   const tenant = await systemDb.tenant.findUnique({ where: { slug }, include: { profile: true } });
   if (!tenant?.profile) return null;
   const now = new Date();
   const horizonDays = horizonOf(tenant.profile);
   const horizon = new Date(now.getTime() + (horizonDays + 1) * 86_400_000);
-  const token = cookies().get(clientCookie(tenant.id))?.value;
-  const [services, hours, busy, promo, returning] = await Promise.all([
+  // Token del cliente: por link del email (?c=) o por cookie de este dispositivo.
+  const token = clientToken || cookies().get(clientCookie(tenant.id))?.value;
+  const multiStaff = tieneFeature(tenant, "multi_staff");
+  const [services, staff, hours, busy, promo, returning] = await Promise.all([
     systemDb.service.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { sortOrder: "asc" } }),
+    multiStaff ? systemDb.staff.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { sortOrder: "asc" } }) : Promise.resolve([]),
     systemDb.workingHour.findMany({ where: { tenantId: tenant.id, active: true } }),
     // Ventanas ocupadas del horizonte completo: el cliente calcula los
     // huecos al instante, sin volver al server ("buscando huecos" ya no espera).
     systemDb.appointment.findMany({
       where: { tenantId: tenant.id, status: { not: "CANCELADO" }, endsAt: { gte: now }, startsAt: { lte: horizon } },
-      select: { startsAt: true, endsAt: true },
+      select: { startsAt: true, endsAt: true, staffId: true },
     }),
     promoToken ? systemDb.promotion.findFirst({ where: { tenantId: tenant.id, token: promoToken, active: true, expiresAt: { gt: new Date() } } }) : null,
-    // Cliente que ya reservó antes (cookie con su token): sus turnos.
+    // Cliente que ya reservó antes (cookie/token con su accessToken): sus turnos.
     token ? systemDb.client.findFirst({
       where: { tenantId: tenant.id, accessToken: token },
-      include: { appointments: { where: { status: { not: "CANCELADO" } }, include: { service: true }, orderBy: { startsAt: "desc" }, take: 12 } },
+      include: { appointments: { where: { status: { not: "CANCELADO" } }, include: { service: true, staff: true }, orderBy: { startsAt: "desc" }, take: 12 } },
     }) : null,
   ]);
   const misTurnos = returning
@@ -99,23 +106,29 @@ export async function getPublicBooking(slug: string, promoToken?: string) {
     : null;
   // No exponer los datos de notificación del dueño en la página pública.
   const { notifyEmail, notifyOnBooking, ...profilePublico } = tenant.profile;
-  return { tenant, profile: profilePublico, services, hours, busy, promo, horizonDays, misTurnos };
+  return { tenant, profile: profilePublico, services, staff, hours, busy, promo, horizonDays, misTurnos };
 }
 
-export async function publicAvailability(slug: string, serviceId: string, date: string) {
+export async function publicAvailability(slug: string, serviceId: string, date: string, staffId?: string) {
   const service = await systemDb.service.findFirst({
     where: { id: serviceId, active: true, tenant: { slug } },
     include: { tenant: { include: { profile: true } } },
   });
   if (!service?.tenant.profile) return [];
+  const tenantId = service.tenantId;
+  const multiStaff = tieneFeature(service.tenant, "multi_staff");
+  const staffActivos = multiStaff ? await systemDb.staff.count({ where: { tenantId, active: true } }) : 0;
   const [busy, hours] = await Promise.all([
     systemDb.appointment.findMany({
-      where: { tenantId: service.tenantId, status: { not: "CANCELADO" }, startsAt: { lte: localDate(date, 1439) }, endsAt: { gte: localDate(date, 0) } },
+      where: { tenantId, status: { not: "CANCELADO" }, startsAt: { lte: localDate(date, 1439) }, endsAt: { gte: localDate(date, 0) }, ...(staffId ? { staffId } : {}) },
       select: { startsAt: true, endsAt: true },
     }),
-    systemDb.workingHour.findMany({ where: { tenantId: service.tenantId, active: true } }),
+    systemDb.workingHour.findMany({ where: { tenantId, active: true } }),
   ]);
-  return computeSlots({ date, durationMinutes: service.durationMinutes, hours, busy, rules: service.tenant.profile });
+  // Con profesional elegido: cupo 1 (su agenda). "Cualquiera": cupo = cantidad
+  // de profesionales activos (libre mientras haya al menos uno sin ocupar).
+  const capacity = staffId ? 1 : Math.max(1, staffActivos);
+  return computeSlots({ date, durationMinutes: service.durationMinutes, hours, busy, rules: service.tenant.profile, capacity });
 }
 
 const bookingSchema = z.object({
@@ -123,7 +136,24 @@ const bookingSchema = z.object({
   time: z.string().regex(/^\d{2}:\d{2}$/), name: z.string().trim().min(2).max(80),
   phone: z.string().min(8), email: z.string().email().optional().or(z.literal("")),
   promoToken: z.string().optional(), marketingConsent: z.boolean().optional(),
+  staffId: z.string().optional(),
 });
+
+// Resuelve a qué profesional se asigna el turno: el elegido, o (si eligió
+// "cualquiera") el primer profesional activo que esté libre en ese horario.
+// Devuelve null si el negocio no usa staff. Lanza si no hay ninguno libre.
+async function resolverStaff(tenantId: string, staffActivos: { id: string }[], staffPedido: string | null, startsAt: Date, endsAt: Date): Promise<string | null> {
+  if (!staffActivos.length) return null;
+  if (staffPedido) return staffPedido;
+  const ocupados = await systemDb.appointment.findMany({
+    where: { tenantId, status: { not: "CANCELADO" }, startsAt: { lt: endsAt }, endsAt: { gt: startsAt } },
+    select: { staffId: true },
+  });
+  const busy = new Set(ocupados.map((o) => o.staffId));
+  const libre = staffActivos.find((s) => !busy.has(s.id));
+  if (!libre) throw new Error("sin_staff_libre");
+  return libre.id;
+}
 
 export async function bookPublic(input: z.infer<typeof bookingSchema>) {
   const parsed = bookingSchema.safeParse(input);
@@ -142,18 +172,29 @@ export async function bookPublic(input: z.infer<typeof bookingSchema>) {
   // Límite de agenda: no se puede reservar más allá del horizonte configurado.
   const maxDay = localDayAR(new Date(Date.now() + horizonOf(tenant.profile) * 86_400_000));
   if (data.date > maxDay) return { ok: false as const, error: "Ese día todavía no está habilitado para reservar." };
+  const multiStaff = tieneFeature(tenant, "multi_staff");
+  const staffActivos = multiStaff
+    ? await systemDb.staff.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, emoji: true } })
+    : [];
+  const staffPedido = data.staffId?.trim() || null;
+  if (staffPedido && !staffActivos.some((s) => s.id === staffPedido)) return { ok: false as const, error: "Ese profesional no está disponible." };
   const [busy, hours] = await Promise.all([
     systemDb.appointment.findMany({
-      where: { tenantId: tenant.id, status: { not: "CANCELADO" }, startsAt: { lte: localDate(data.date, 1439) }, endsAt: { gte: localDate(data.date, 0) } },
+      where: { tenantId: tenant.id, status: { not: "CANCELADO" }, startsAt: { lte: localDate(data.date, 1439) }, endsAt: { gte: localDate(data.date, 0) }, ...(staffPedido ? { staffId: staffPedido } : {}) },
       select: { startsAt: true, endsAt: true },
     }),
     systemDb.workingHour.findMany({ where: { tenantId: tenant.id, active: true } }),
   ]);
-  const available = computeSlots({ date: data.date, durationMinutes: service.durationMinutes, hours, busy, rules: tenant.profile, vacations });
+  const capacity = staffPedido ? 1 : Math.max(1, staffActivos.length);
+  const available = computeSlots({ date: data.date, durationMinutes: service.durationMinutes, hours, busy, rules: tenant.profile, vacations, capacity });
   if (!available.includes(data.time)) return { ok: false as const, error: "Ese horario acaba de ocuparse. Elegí otro." };
   const [h = 0, m = 0] = data.time.split(":").map(Number);
   const startsAt = localDate(data.date, h * 60 + m);
   const endsAt = new Date(startsAt.getTime() + (service.durationMinutes + tenant.profile.bufferMinutes) * 60000);
+  let staffAsignado: string | null;
+  try {
+    staffAsignado = await resolverStaff(tenant.id, staffActivos, staffPedido, startsAt, endsAt);
+  } catch { return { ok: false as const, error: "Ese horario acaba de ocuparse. Elegí otro." }; }
   try {
     const { appointment, clientToken } = await systemDb.$transaction(async (tx) => {
       const consent = data.marketingConsent ?? true;
@@ -166,7 +207,7 @@ export async function bookPublic(input: z.infer<typeof bookingSchema>) {
       if (!client.accessToken) client = await tx.client.update({ where: { id: client.id }, data: { accessToken: randomUUID() } });
       const promo = data.promoToken ? await tx.promotion.findFirst({ where: { tenantId: tenant.id, token: data.promoToken, active: true, expiresAt: { gt: new Date() } } }) : null;
       const appointment = await tx.appointment.create({ data: {
-        tenantId: tenant.id, serviceId: service.id, clientId: client.id, startsAt, endsAt,
+        tenantId: tenant.id, serviceId: service.id, clientId: client.id, staffId: staffAsignado, startsAt, endsAt,
         channel: promo ? "PROMO" : "PUBLIC", promotionId: promo?.id,
         depositRequired: false, depositStatus: "disabled",
       } });
@@ -187,9 +228,10 @@ export async function bookPublic(input: z.infer<typeof bookingSchema>) {
     void enviarEmailsReserva({
       tenant, profile: tenant.profile, service,
       clienteNombre: data.name, clienteEmail: data.email || null, telefono: phone(data.phone),
-      date: data.date, time: data.time,
+      date: data.date, time: data.time, clientToken,
     });
-    return { ok: true as const, appointmentId: appointment.id };
+    const staff = staffAsignado ? staffActivos.find((s) => s.id === staffAsignado) ?? null : null;
+    return { ok: true as const, appointmentId: appointment.id, staff };
   } catch (error: any) {
     if (error?.code === "P2004" || String(error?.message).includes("appointment_no_overlap")) return { ok: false as const, error: "Ese horario acaba de ocuparse. Elegí otro." };
     console.error("[booking]", error);
@@ -200,22 +242,25 @@ export async function bookPublic(input: z.infer<typeof bookingSchema>) {
 // Disponibilidad para el ALTA MANUAL del dueño: igual que la pública pero sin
 // el tope de anticipación (bookingLeadMinutes = 0), así puede cargar un turno
 // para ahora mismo (walk-in). Respeta horarios, buffer, vacaciones y ocupación.
-export async function ownerAvailability(serviceId: string, date: string): Promise<string[]> {
+export async function ownerAvailability(serviceId: string, date: string, staffId?: string): Promise<string[]> {
   const tenant = await getCurrentTenant();
   if (tenant.planStatus !== "ONBOARDING") await requireFeature("turnos");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
-  const [service, profile, hours, busy] = await Promise.all([
+  const multiStaff = tieneFeature(tenant, "multi_staff");
+  const [service, profile, hours, busy, staffCount] = await Promise.all([
     db.service.findFirst({ where: { id: serviceId, active: true } }),
     db.businessProfile.findFirst(),
     db.workingHour.findMany({ where: { active: true } }),
     db.appointment.findMany({
-      where: { status: { not: "CANCELADO" }, startsAt: { lte: localDate(date, 1439) }, endsAt: { gte: localDate(date, 0) } },
+      where: { status: { not: "CANCELADO" }, startsAt: { lte: localDate(date, 1439) }, endsAt: { gte: localDate(date, 0) }, ...(staffId ? { staffId } : {}) },
       select: { startsAt: true, endsAt: true },
     }),
+    multiStaff ? db.staff.count({ where: { active: true } }) : Promise.resolve(0),
   ]);
   if (!service || !profile) return [];
   const vacations = (profile.vacations as Vacation[] | null) ?? null;
-  return computeSlots({ date, durationMinutes: service.durationMinutes, hours, busy, rules: { ...profile, bookingLeadMinutes: 0 }, vacations });
+  const capacity = staffId ? 1 : Math.max(1, staffCount);
+  return computeSlots({ date, durationMinutes: service.durationMinutes, hours, busy, rules: { ...profile, bookingLeadMinutes: 0 }, vacations, capacity });
 }
 
 const manualBookingSchema = z.object({
@@ -224,6 +269,7 @@ const manualBookingSchema = z.object({
   time: z.string().regex(/^\d{2}:\d{2}$/),
   name: z.string().trim().min(2).max(80),
   phone: z.string().min(6),
+  staffId: z.string().optional(),
 });
 
 /**
@@ -245,18 +291,28 @@ export async function crearTurnoManual(input: z.infer<typeof manualBookingSchema
   if (!service) return { ok: false as const, error: "Ese servicio ya no está disponible." };
   const vacations = (profile.vacations as Vacation[] | null) ?? null;
   if (isVacation(data.date, vacations)) return { ok: false as const, error: "Ese día el negocio no atiende." };
+  const multiStaff = tieneFeature(tenant, "multi_staff");
+  const staffActivos = multiStaff
+    ? await db.staff.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" }, select: { id: true } })
+    : [];
+  const staffPedido = data.staffId?.trim() || null;
+  if (staffPedido && !staffActivos.some((s) => s.id === staffPedido)) return { ok: false as const, error: "Ese profesional no existe." };
   const [busy, hours] = await Promise.all([
     db.appointment.findMany({
-      where: { status: { not: "CANCELADO" }, startsAt: { lte: localDate(data.date, 1439) }, endsAt: { gte: localDate(data.date, 0) } },
+      where: { status: { not: "CANCELADO" }, startsAt: { lte: localDate(data.date, 1439) }, endsAt: { gte: localDate(data.date, 0) }, ...(staffPedido ? { staffId: staffPedido } : {}) },
       select: { startsAt: true, endsAt: true },
     }),
     db.workingHour.findMany({ where: { active: true } }),
   ]);
-  const available = computeSlots({ date: data.date, durationMinutes: service.durationMinutes, hours, busy, rules: { ...profile, bookingLeadMinutes: 0 }, vacations });
+  const capacity = staffPedido ? 1 : Math.max(1, staffActivos.length);
+  const available = computeSlots({ date: data.date, durationMinutes: service.durationMinutes, hours, busy, rules: { ...profile, bookingLeadMinutes: 0 }, vacations, capacity });
   if (!available.includes(data.time)) return { ok: false as const, error: "Ese horario está ocupado o fuera de agenda. Elegí otro." };
   const [h = 0, m = 0] = data.time.split(":").map(Number);
   const startsAt = localDate(data.date, h * 60 + m);
   const endsAt = new Date(startsAt.getTime() + (service.durationMinutes + profile.bufferMinutes) * 60000);
+  let staffAsignado: string | null;
+  try { staffAsignado = await resolverStaff(tenant.id, staffActivos, staffPedido, startsAt, endsAt); }
+  catch { return { ok: false as const, error: "Ese horario está ocupado. Elegí otro." }; }
   try {
     const appointment = await db.$transaction(async (tx) => {
       const client = await tx.client.upsert({
@@ -265,7 +321,7 @@ export async function crearTurnoManual(input: z.infer<typeof manualBookingSchema
         create: { tenantId: tenant.id, name: data.name, phone: phone(data.phone), accessToken: randomUUID() },
       });
       return tx.appointment.create({ data: {
-        tenantId: tenant.id, serviceId: service.id, clientId: client.id, startsAt, endsAt,
+        tenantId: tenant.id, serviceId: service.id, clientId: client.id, staffId: staffAsignado, startsAt, endsAt,
         channel: "OWNER", depositRequired: false, depositStatus: "disabled",
       } });
     });
@@ -322,6 +378,46 @@ export async function saveNotifications(input: { notifyOnBooking: boolean; notif
     data: { notifyOnBooking: input.notifyOnBooking, notifyEmail: email || null },
   });
   revalidatePath("/app");
+  return { ok: true };
+}
+
+// ── Profesionales (multi_staff, plan Turnos Auto) ───────────────────────────
+export async function saveStaff(input: { id?: string; name: string; emoji?: string; active?: boolean }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const tenant = await getCurrentTenant();
+  if (!tieneFeature(tenant, "multi_staff")) return { ok: false, error: "Los profesionales son parte de Turnos Auto." };
+  const name = input.name.trim();
+  if (name.length < 2) return { ok: false, error: "Poné el nombre del profesional." };
+  if (input.id) {
+    await db.staff.update({ where: { id: input.id }, data: { name, emoji: input.emoji || undefined, ...(input.active === undefined ? {} : { active: input.active }) } });
+  } else {
+    const count = await db.staff.count();
+    if (count >= MAX_STAFF) return { ok: false, error: `Con Turnos Auto podés cargar hasta ${MAX_STAFF} profesionales.` };
+    await db.staff.create({ data: { tenantId: tenant.id, name, emoji: input.emoji || "💈", sortOrder: count } });
+  }
+  revalidatePath("/app");
+  revalidatePath(`/${tenant.slug}`);
+  return { ok: true };
+}
+
+export async function deleteStaff(id: string): Promise<{ ok: true }> {
+  const tenant = await getCurrentTenant();
+  if (!tieneFeature(tenant, "multi_staff")) return { ok: true };
+  // Los turnos del profesional quedan sin asignar (staffId → null por la FK).
+  await db.staff.delete({ where: { id } });
+  revalidatePath("/app");
+  revalidatePath(`/${tenant.slug}`);
+  return { ok: true };
+}
+
+// Tema visual de la página pública (multi/temas, plan Turnos Auto).
+const TEMAS_VALIDOS = ["clasico", "profesional", "noche"];
+export async function saveTheme(theme: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const tenant = await getCurrentTenant();
+  if (!tieneFeature(tenant, "temas")) return { ok: false, error: "Los temas son parte de Turnos Auto." };
+  if (!TEMAS_VALIDOS.includes(theme)) return { ok: false, error: "Tema no válido." };
+  await db.businessProfile.update({ where: { tenantId: tenant.id }, data: { theme } });
+  revalidatePath("/app");
+  revalidatePath(`/${tenant.slug}`);
   return { ok: true };
 }
 

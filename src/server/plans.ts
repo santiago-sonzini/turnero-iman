@@ -2,8 +2,11 @@ import type { PlanTier, Tenant } from "@prisma/client";
 
 export const DIAS_TRIAL = 7;
 export const DIAS_GRACIA = 7;
-export type FeatureKey = "turnos" | "clientes" | "promos" | "wa_links" | "email" | "whatsapp_auto";
+export type FeatureKey = "turnos" | "clientes" | "promos" | "wa_links" | "email" | "whatsapp_auto" | "multi_staff" | "temas";
 export type PlanDef = { tier: PlanTier; nombre: string; descripcion: string; precioArs: number; features: FeatureKey[]; destacado?: boolean };
+
+// Tope de profesionales que puede cargar un negocio con multi_staff.
+export const MAX_STAFF = 3;
 
 export const PLANES: Record<PlanTier, PlanDef> = {
   TURNOS: {
@@ -12,9 +15,9 @@ export const PLANES: Record<PlanTier, PlanDef> = {
     features: ["turnos", "clientes", "promos", "wa_links", "email"],
   },
   TURNOS_AUTO: {
-    tier: "TURNOS_AUTO", nombre: "Turnos Auto", precioArs: 25_000,
-    descripcion: "Todo Turnos + confirmaciones, recordatorios y recupero automático desde tu número.",
-    features: ["turnos", "clientes", "promos", "wa_links", "email", "whatsapp_auto"], destacado: true,
+    tier: "TURNOS_AUTO", nombre: "Turnos Auto", precioArs: 30_000,
+    descripcion: "Todo Turnos + hasta 3 profesionales con agenda propia y temas visuales para tu página.",
+    features: ["turnos", "clientes", "promos", "wa_links", "email", "multi_staff", "temas"], destacado: true,
   },
 };
 

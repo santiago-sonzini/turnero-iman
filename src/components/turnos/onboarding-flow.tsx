@@ -71,6 +71,8 @@ export function OnboardingFlow({ initial }: { initial: InitialOnboarding }) {
   // Los errores por campo recién se muestran tras el primer intento de "Seguir",
   // y de ahí en más se actualizan en vivo mientras el usuario corrige.
   const [triedNext, setTriedNext] = useState(false);
+  // Plan elegido para arrancar el trial (se puede empezar en Turnos Auto).
+  const [planElegido, setPlanElegido] = useState<"TURNOS" | "TURNOS_AUTO">("TURNOS");
   const router = useRouter();
 
   const errores = erroresNegocio(business, ubicTab);
@@ -118,7 +120,7 @@ export function OnboardingFlow({ initial }: { initial: InitialOnboarding }) {
   const finish = (conPago: boolean) => startFinishing(async () => {
     setError("");
     try {
-      const result = await elegirPlan("TURNOS", { conPago });
+      const result = await elegirPlan(planElegido, { conPago });
       if (!result.ok) throw new Error(result.error);
       if (result.initPoint) { window.location.href = result.initPoint; return; }
       router.push("/app");
@@ -199,12 +201,17 @@ export function OnboardingFlow({ initial }: { initial: InitialOnboarding }) {
       <button className="bk-volver" onClick={() => setStep(1)}><ArrowLeft /> Volver</button>
       <p className="eyebrow">3 DE 3 · TU PLAN</p>
       <h1 style={{ marginBottom: 6 }}>Probalo 7 días gratis</h1>
-      <p className="bk-sub">Todo trial arranca en el plan base. Subís a Turnos Auto cuando quieras.</p>
-      <div className="tarjeta-fila" style={{ cursor: "default" }}>
+      <p className="bk-sub">Elegí con qué plan arrancás. Cambiás cuando quieras — los 7 días son gratis igual.</p>
+      <button type="button" className={`plan-opt ${planElegido === "TURNOS" ? "on" : ""}`} onClick={() => setPlanElegido("TURNOS")}>
         <span className="emo"><Clock3 /></span>
         <div className="info"><span className="nom">Turnos · $ 15.000/mes</span><span className="sub">Agenda, reservas, clientes, promos, wa.me y email.</span></div>
-      </div>
-      <div className="hint"><Sparkles /><div><b>Después podés subir a Turnos Auto</b><p>$ 25.000/mes · confirmaciones y recordatorios automáticos.</p></div></div>
+        <span className="plan-check">{planElegido === "TURNOS" && <Check />}</span>
+      </button>
+      <button type="button" className={`plan-opt destacado ${planElegido === "TURNOS_AUTO" ? "on" : ""}`} onClick={() => setPlanElegido("TURNOS_AUTO")}>
+        <span className="emo"><Sparkles /></span>
+        <div className="info"><span className="nom">Turnos Auto · $ 30.000/mes <em className="plan-badge">Más completo</em></span><span className="sub">Todo Turnos + hasta 3 profesionales con agenda propia y temas visuales.</span></div>
+        <span className="plan-check">{planElegido === "TURNOS_AUTO" && <Check />}</span>
+      </button>
       {initial.mp
         ? <button className="btn btn-acento block" disabled={finishing} onClick={() => finish(true)}>
             <CreditCard /> {finishing ? "Conectando con Mercado Pago…" : "Empezar prueba gratis"}

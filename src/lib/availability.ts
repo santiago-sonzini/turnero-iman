@@ -40,8 +40,12 @@ export function computeSlots(params: {
   rules: BookingRulesLike;
   vacations?: Vacation[] | null;
   now?: Date;
+  // Cupo simultáneo: 1 = un profesional (o el negocio). Con N profesionales y
+  // "cualquiera", un horario sigue libre mientras haya menos de N ocupados.
+  capacity?: number;
 }): string[] {
   const { date, durationMinutes, hours, busy, rules } = params;
+  const capacity = Math.max(1, params.capacity ?? 1);
   if (isVacation(date, params.vacations)) return []; // negocio de vacaciones ese día
   const weekday = weekdayOf(date);
   const intervals = hours.filter((h) => h.weekday === weekday && (h.active ?? true));
@@ -54,7 +58,8 @@ export function computeSlots(params: {
       const startsAt = localDate(date, m);
       if (startsAt <= lead) continue;
       const endsAt = new Date(startsAt.getTime() + (durationMinutes + rules.bufferMinutes) * 60_000);
-      if (windows.some((w) => startsAt < w.end && endsAt > w.start)) continue;
+      const solapados = windows.filter((w) => startsAt < w.end && endsAt > w.start).length;
+      if (solapados >= capacity) continue;
       slots.push(minutesLabel(m));
     }
   }
