@@ -71,7 +71,7 @@ export function OnboardingFlow({ initial }: { initial: InitialOnboarding }) {
   // Los errores por campo recién se muestran tras el primer intento de "Seguir",
   // y de ahí en más se actualizan en vivo mientras el usuario corrige.
   const [triedNext, setTriedNext] = useState(false);
-  // Plan elegido para arrancar el trial (se puede empezar en Turnos Auto).
+  // Plan elegido para arrancar el trial (se puede empezar en Turnos Pro).
   const [planElegido, setPlanElegido] = useState<"TURNOS" | "TURNOS_AUTO">("TURNOS");
   const router = useRouter();
 
@@ -209,7 +209,7 @@ export function OnboardingFlow({ initial }: { initial: InitialOnboarding }) {
       </button>
       <button type="button" className={`plan-opt destacado ${planElegido === "TURNOS_AUTO" ? "on" : ""}`} onClick={() => setPlanElegido("TURNOS_AUTO")}>
         <span className="emo"><Sparkles /></span>
-        <div className="info"><span className="nom">Turnos Auto · $ 30.000/mes <em className="plan-badge">Más completo</em></span><span className="sub">Todo Turnos + hasta 3 profesionales con agenda propia y temas visuales.</span></div>
+        <div className="info"><span className="nom">Turnos Pro · $ 30.000/mes <em className="plan-badge">Más completo</em></span><span className="sub">Todo Turnos + hasta 3 profesionales con agenda propia y temas visuales.</span></div>
         <span className="plan-check">{planElegido === "TURNOS_AUTO" && <Check />}</span>
       </button>
       {initial.mp

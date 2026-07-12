@@ -15,7 +15,7 @@ export const PLANES: Record<PlanTier, PlanDef> = {
     features: ["turnos", "clientes", "promos", "wa_links", "email"],
   },
   TURNOS_AUTO: {
-    tier: "TURNOS_AUTO", nombre: "Turnos Auto", precioArs: 30_000,
+    tier: "TURNOS_AUTO", nombre: "Turnos Pro", precioArs: 30_000,
     descripcion: "Todo Turnos + hasta 3 profesionales con agenda propia y temas visuales para tu página.",
     features: ["turnos", "clientes", "promos", "wa_links", "email", "multi_staff", "temas"], destacado: true,
   },

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarPlus, Check, Clock3, MapPin, MessageCircle, X } from "lucide-react";
+import { ArrowLeft, CalendarPlus, Check, Clock3, Instagram, MapPin, MessageCircle, X } from "lucide-react";
 import { bookPublic, cancelPublicAppointment } from "@/app/actions/turnos";
 import { computeSlots, isVacation } from "@/lib/availability";
 import { MagnetLogo } from "./magnet-logo";
@@ -100,6 +100,7 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
       {initial.profile.mapsUrl
         ? <a className="meta meta-link" href={initial.profile.mapsUrl} target="_blank" rel="noopener noreferrer"><MapPin /> {initial.profile.address || "Cómo llegar"}</a>
         : initial.profile.address && <p className="meta"><MapPin /> {initial.profile.address}</p>}
+      {initial.profile.instagram && <a className="meta meta-link" href={`https://instagram.com/${initial.profile.instagram}`} target="_blank" rel="noopener noreferrer"><Instagram /> @{initial.profile.instagram}</a>}
     </header>
 
     {initial.promo && step < 3 && <div className="promo-banner"><span>🎁</span><div><b>{initial.promo.name}</b><p>{initial.promo.message}</p></div></div>}

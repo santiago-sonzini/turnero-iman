@@ -191,8 +191,18 @@ export async function cancelarSuscripcion(): Promise<ResultadoPlan> {
     try {
       await cancelarSuscripcionMp(tenant.mpPreapprovalId);
     } catch (e) {
-      console.error("[mp] error cancelando", e);
-      return { ok: false, error: "No se pudo cancelar en Mercado Pago." };
+      // Si ya estaba cancelada en MP, seguimos igual. Si no, avisamos y NO
+      // cortamos el acceso (para no dejar "cancelado" pero MP cobrando).
+      try {
+        const pre = await obtenerSuscripcion(tenant.mpPreapprovalId);
+        if (pre.status !== "cancelled") {
+          console.error("[mp] error cancelando", e);
+          return { ok: false, error: "No pudimos cancelar en Mercado Pago. Probá de nuevo en un momento." };
+        }
+      } catch (e2) {
+        console.error("[mp] error cancelando (y no pudimos verificar el estado)", e, e2);
+        return { ok: false, error: "No pudimos cancelar en Mercado Pago. Probá de nuevo en un momento." };
+      }
     }
   }
   await db.tenant.update({

@@ -8,6 +8,7 @@ import { getCurrentTenant } from "@/server/tenant-context";
 import { requireFeature } from "@/server/gate";
 import { tieneFeature, MAX_STAFF } from "@/server/plans";
 import { computeSlots, isVacation, localDate, type Vacation } from "@/lib/availability";
+import { instagramHandle } from "@/lib/instagram";
 import { ensureUniqueSlug, isValidSlug } from "@/lib/slug";
 import { appUrl } from "@/server/mp/preapproval";
 import { z } from "zod";
@@ -360,9 +361,12 @@ export async function saveService(input: { id?: string; name: string; emoji: str
 
 export async function saveProfile(input: { name: string; phone?: string; address?: string; mapsUrl?: string; instagram?: string; accent: string }) {
   const tenant = await getCurrentTenant();
-  await db.businessProfile.upsert({ where: { tenantId: tenant.id }, update: input, create: { tenantId: tenant.id, ...input } });
+  // Guardamos el usuario de Instagram normalizado (sin URL ni @); si es inválido, vacío.
+  const data = { ...input, instagram: input.instagram ? (instagramHandle(input.instagram) ?? "") : "" };
+  await db.businessProfile.upsert({ where: { tenantId: tenant.id }, update: data, create: { tenantId: tenant.id, ...data } });
   await db.tenant.update({ where: { id: tenant.id }, data: { name: input.name } });
   revalidatePath("/app");
+  revalidatePath(`/${tenant.slug}`);
 }
 
 // Aviso por email al dueño cada vez que entra una reserva (opt-in). Va al mail
@@ -381,17 +385,17 @@ export async function saveNotifications(input: { notifyOnBooking: boolean; notif
   return { ok: true };
 }
 
-// ── Profesionales (multi_staff, plan Turnos Auto) ───────────────────────────
+// ── Profesionales (multi_staff, plan Turnos Pro) ───────────────────────────
 export async function saveStaff(input: { id?: string; name: string; emoji?: string; active?: boolean }): Promise<{ ok: true } | { ok: false; error: string }> {
   const tenant = await getCurrentTenant();
-  if (!tieneFeature(tenant, "multi_staff")) return { ok: false, error: "Los profesionales son parte de Turnos Auto." };
+  if (!tieneFeature(tenant, "multi_staff")) return { ok: false, error: "Los profesionales son parte de Turnos Pro." };
   const name = input.name.trim();
   if (name.length < 2) return { ok: false, error: "Poné el nombre del profesional." };
   if (input.id) {
     await db.staff.update({ where: { id: input.id }, data: { name, emoji: input.emoji || undefined, ...(input.active === undefined ? {} : { active: input.active }) } });
   } else {
     const count = await db.staff.count();
-    if (count >= MAX_STAFF) return { ok: false, error: `Con Turnos Auto podés cargar hasta ${MAX_STAFF} profesionales.` };
+    if (count >= MAX_STAFF) return { ok: false, error: `Con Turnos Pro podés cargar hasta ${MAX_STAFF} profesionales.` };
     await db.staff.create({ data: { tenantId: tenant.id, name, emoji: input.emoji || "💈", sortOrder: count } });
   }
   revalidatePath("/app");
@@ -409,11 +413,11 @@ export async function deleteStaff(id: string): Promise<{ ok: true }> {
   return { ok: true };
 }
 
-// Tema visual de la página pública (multi/temas, plan Turnos Auto).
+// Tema visual de la página pública (multi/temas, plan Turnos Pro).
 const TEMAS_VALIDOS = ["clasico", "profesional", "noche"];
 export async function saveTheme(theme: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const tenant = await getCurrentTenant();
-  if (!tieneFeature(tenant, "temas")) return { ok: false, error: "Los temas son parte de Turnos Auto." };
+  if (!tieneFeature(tenant, "temas")) return { ok: false, error: "Los temas son parte de Turnos Pro." };
   if (!TEMAS_VALIDOS.includes(theme)) return { ok: false, error: "Tema no válido." };
   await db.businessProfile.update({ where: { tenantId: tenant.id }, data: { theme } });
   revalidatePath("/app");

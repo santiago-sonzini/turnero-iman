@@ -23,8 +23,9 @@ export function Panel({ plan, acceso, hasMp, mpReady, prices }: any) {
   };
   const cancel = async () => {
     if (!confirm("¿Cancelar la suscripción? Tus datos quedan guardados.")) return;
-    setLoading("cancel");
-    await cancelarSuscripcion();
+    setLoading("cancel"); setError("");
+    const r = await cancelarSuscripcion();
+    if (!r.ok) { setError(r.error); setLoading(""); return; }
     location.reload();
   };
 
@@ -40,7 +41,7 @@ export function Panel({ plan, acceso, hasMp, mpReady, prices }: any) {
     <div className="tarjeta-fila" style={{ cursor: "default" }}>
       <span className="emo">💳</span>
       <div className="info">
-        <span className="nom">{plan === "TURNOS_AUTO" ? "Turnos Auto" : "Turnos"}</span>
+        <span className="nom">{plan === "TURNOS_AUTO" ? "Turnos Pro" : "Turnos"}</span>
         <span className="sub">{plan ? `${prices[plan]}/mes` : "Sin plan"}</span>
       </div>
       <span className={`sem ${estado.clase}`}><i className="pto" />{estado.label}</span>
@@ -59,7 +60,7 @@ export function Panel({ plan, acceso, hasMp, mpReady, prices }: any) {
     </button>}
     {plan !== "TURNOS_AUTO" && <button className="tarjeta-fila" disabled={!!loading} onClick={() => change("TURNOS_AUTO")}>
       <span className="emo"><Sparkles /></span>
-      <div className="info"><span className="nom">Turnos Auto</span><span className="sub">{prices.TURNOS_AUTO}/mes · Hasta 3 profesionales y temas</span></div>
+      <div className="info"><span className="nom">Turnos Pro</span><span className="sub">{prices.TURNOS_AUTO}/mes · Hasta 3 profesionales y temas</span></div>
     </button>}
     {error && <p className="form-error">{error}</p>}
 

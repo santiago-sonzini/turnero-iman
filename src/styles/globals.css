@@ -527,7 +527,7 @@ button.tarjeta-fila:active,a.tarjeta-fila:active{transform:translateY(2px)}
 
 /* ---------- página pública de reservas ------------------------------------ */
 .bk{max-width:480px;margin:0 auto;min-height:100svh;position:relative;padding-bottom:40px;background:var(--crema)}
-/* ---------- temas de la página pública (Turnos Auto) ---------------------- */
+/* ---------- temas de la página pública (Turnos Pro) ---------------------- */
 /* "clasico" es el default (:root). "profesional": limpio y sobrio. */
 .bk[data-theme="profesional"]{
   --crema:#F4F5F7; --tinta:#242A33; --tinta-suave:#69707d; --blanco:#FFFFFF;

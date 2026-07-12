@@ -94,7 +94,8 @@ export async function signup(values: {
       },
     })
     await systemDb.businessProfile.create({
-      data: { name: values.negocio, tenantId: tenant.id },
+      // Avisos por email ON por defecto, al mail con el que se creó la cuenta.
+      data: { name: values.negocio, tenantId: tenant.id, notifyOnBooking: true, notifyEmail: values.email },
     })
     await trackFor(tenant.id, "cuenta_creada", { email: values.email })
   }

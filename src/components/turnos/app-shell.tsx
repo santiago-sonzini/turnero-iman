@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, LogOut, MessageCircle, Plus, Scissors, Settings, Share2, Sparkles, Trash2, Users, X } from "lucide-react";
 import { acceptWhatsappRisk, createPromotion, crearTurnoManual, deleteStaff, ownerAvailability, queueGapFill, saveBookingSettings, saveNotifications, saveProfile, saveService, saveStaff, saveTheme, setAppointmentStatus } from "@/app/actions/turnos";
 import { signOut } from "@/app/actions/auth";
+import { instagramHandle } from "@/lib/instagram";
 import { MagnetLogo } from "./magnet-logo";
 import Image from "next/image";
 
@@ -67,7 +68,7 @@ export function AppShell({ data }: { data: any }) {
         {sheet.type === "profile" && <ProfileSheet close={close} profile={data.profile} />}
         {sheet.type === "whatsapp" && <WhatsappSheet close={close} qr={data.whatsapp?.qrCode} eligible={data.tenant.plan === "TURNOS_AUTO"} accepted={!!data.tenant.whatsappRiskAcceptedAt} />}
         {sheet.type === "booking" && <BookingSettingsSheet close={close} tenant={data.tenant} profile={data.profile} />}
-        {sheet.type === "manual" && <ManualSheet close={close} services={data.services} clients={data.clients} staff={data.staff ?? []} />}
+        {sheet.type === "manual" && <ManualSheet close={close} services={data.services} clients={data.clients} staff={data.staff ?? []} hours={data.workingHours ?? []} />}
         {sheet.type === "share" && <ShareSheet close={close} slug={data.tenant.slug} name={data.profile?.name ?? data.tenant.name} staff={data.staff ?? []} />}
         {sheet.type === "notif" && <NotificationsSheet close={close} profile={data.profile} />}
         {sheet.type === "staff" && <StaffSheet close={close} staff={data.staff ?? []} />}
@@ -369,7 +370,7 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
       {["#E94F37", "#C5386A", "#7656D6", "#246BCE", "#1B7B94", "#198754", "#C26A12", "#33231A"].map((c) =>
         <button key={c} aria-label={`Usar color ${c}`} disabled={pending} onClick={() => setAccent(c)} style={{ background: c }} className={`tema-sw ${c.toLowerCase() === String(data.profile.accent).toLowerCase() ? "sel" : ""}`} />)}
     </div>
-    <div className="seccion-tit"><h2>Turnos Auto</h2></div>
+    <div className="seccion-tit"><h2>Turnos Pro</h2></div>
     {auto && <button className="tarjeta-fila" onClick={onStaff}>
       <span className="emo">💈</span>
       <div className="info"><span className="nom">Profesionales</span><span className="sub">{data.staff?.length ? `${data.staff.length} cargado${data.staff.length === 1 ? "" : "s"} · cada uno con su agenda` : "Sumá hasta 3 y el cliente elige"}</span></div>
@@ -382,7 +383,7 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
     </button>}
     {!auto && <a className="tarjeta-fila" href="/suscripcion">
       <span className="emo">✨</span>
-      <div className="info"><span className="nom">Subí a Turnos Auto</span><span className="sub">Hasta 3 profesionales y temas visuales para tu página</span></div>
+      <div className="info"><span className="nom">Subí a Turnos Pro</span><span className="sub">Hasta 3 profesionales y temas visuales para tu página</span></div>
       <ChevronRight />
     </a>}
     <a className="tarjeta-fila" href="/suscripcion">
@@ -390,7 +391,6 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
       <div className="info"><span className="nom">Suscripción</span><span className="sub">Plan, débito automático y facturación</span></div>
       <ChevronRight />
     </a>
-    <div className="hint"><span className="hint-emo">🔒</span><div><b>Señas para reservas</b><p>Preparado en datos, todavía no disponible.</p></div><em className="lado">Pronto</em></div>
     <button className="btn btn-danger block" style={{ marginTop: 18 }} disabled={leaving} onClick={() => startLeaving(async () => { await signOut(); })}>
       <LogOut /> {leaving ? "Cerrando…" : "Cerrar sesión"}
     </button>
@@ -535,14 +535,29 @@ function ProfileSheet({ profile, close }: any) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [form, set] = useState({ name: profile.name, phone: profile.phone ?? "", address: profile.address ?? "", mapsUrl: profile.mapsUrl ?? "", instagram: profile.instagram ?? "", accent: profile.accent });
-  const labels: Record<string, string> = { name: "Nombre", phone: "WhatsApp", address: "Dirección", instagram: "Instagram" };
+  const [error, setError] = useState("");
+  const labels: Record<string, string> = { name: "Nombre", phone: "WhatsApp", address: "Dirección" };
+  const igHandle = instagramHandle(form.instagram);
+  const igInvalido = !!form.instagram.trim() && !igHandle;
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault(); setError("");
+    if (igInvalido) { setError("Revisá el Instagram: pegá el link de tu perfil o tu usuario (@tunegocio)."); return; }
+    start(async () => { await saveProfile(form); router.refresh(); close(); });
+  };
   return <>
     <SheetHead title="Datos y color" sub="Esto se ve en tu página pública" onClose={close} />
-    <form className="sheet-body" onSubmit={(e) => { e.preventDefault(); start(async () => { await saveProfile(form); router.refresh(); close(); }); }}>
-      {(["name", "phone", "address", "instagram"] as const).map((key) =>
+    <form className="sheet-body" onSubmit={submit}>
+      {(["name", "phone", "address"] as const).map((key) =>
         <div className="campo" key={key}><span>{labels[key]}</span><input value={(form as any)[key]} onChange={(e) => set({ ...form, [key]: e.target.value })} /></div>)}
+      <div className="campo"><span>Instagram</span>
+        <input value={form.instagram} aria-invalid={igInvalido} onChange={(e) => set({ ...form, instagram: e.target.value })} placeholder="@tunegocio o instagram.com/tunegocio" />
+        {igHandle ? <p className="ayuda">Se muestra como <b>@{igHandle}</b> en tu página.</p>
+          : igInvalido ? <p className="campo-error">Pegá el link de tu perfil o tu usuario (@tunegocio).</p>
+          : <p className="ayuda">Opcional. Aparece un botón de Instagram en tu página de reservas.</p>}
+      </div>
       <div className="campo"><span>Link de Google Maps</span><input inputMode="url" value={form.mapsUrl} onChange={(e) => set({ ...form, mapsUrl: e.target.value })} placeholder="https://maps.app.goo.gl/…" /><p className="ayuda">Opcional. Habilita el botón “Cómo llegar” en tu página.</p></div>
       <div className="campo"><span>Color de marca</span><input type="color" value={form.accent} onChange={(e) => set({ ...form, accent: e.target.value })} /></div>
+      {error && <p className="campo-error">{error}</p>}
       <button className="btn btn-acento block" disabled={pending}>{pending ? "Guardando…" : "Guardar cambios"}</button>
     </form>
   </>;
@@ -553,17 +568,17 @@ function WhatsappSheet({ eligible, accepted, qr, close }: any) {
   const [pending, start] = useTransition();
   if (!eligible) return <>
     <SheetHead title="Automatizá desde tu número" sub="Confirmaciones, recordatorios y recupero con ritmo humano" onClose={close} />
-    <div className="sheet-body"><a className="btn btn-acento block" href="/suscripcion">Subir a Turnos Auto</a></div>
+    <div className="sheet-body"><a className="btn btn-acento block" href="/suscripcion">Subir a Turnos Pro</a></div>
   </>;
   return <>
-    <SheetHead title={accepted ? "Vinculá tu WhatsApp" : "Antes de activarlo"} sub="Turnos Auto · integración no oficial" onClose={close} />
+    <SheetHead title={accepted ? "Vinculá tu WhatsApp" : "Antes de activarlo"} sub="Turnos Pro · integración no oficial" onClose={close} />
     <div className="sheet-body">
       {accepted ? <div className="qr-marco">
         {qr ? <Image src={qr} width={220} height={220} unoptimized alt="Código QR para vincular WhatsApp" /> : <p style={{ fontSize: "2rem", margin: "20px 0" }}>⏳</p>}
         <p>{qr ? "WhatsApp → Dispositivos vinculados → Vincular dispositivo." : "El worker está preparando el código de tu sesión aislada."}</p>
       </div> : <div className="riesgo">
         <b>Integración no oficial</b>
-        <p>Turnos Auto usa open-wa para enviar desde tu número. WhatsApp puede limitar o bloquear cuentas que usen automatizaciones. Usamos ritmo humano, límites y pausas, pero el riesgo no desaparece.</p>
+        <p>Turnos Pro usa open-wa para enviar desde tu número. WhatsApp puede limitar o bloquear cuentas que usen automatizaciones. Usamos ritmo humano, límites y pausas, pero el riesgo no desaparece.</p>
         <p>Si la sesión falla, Imán sigue funcionando y vuelve automáticamente a links wa.me.</p>
         <button className="btn btn-acento block" disabled={pending} onClick={() => start(async () => { await acceptWhatsappRisk(); router.refresh(); })}>{pending ? "Activando…" : "Entiendo el riesgo y acepto"}</button>
       </div>}
@@ -641,13 +656,21 @@ function BookingSettingsSheet({ tenant, profile, close }: any) {
   </>;
 }
 
-function ManualSheet({ services, clients, staff = [], close }: any) {
+function ManualSheet({ services, clients, staff = [], hours = [], close }: any) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const activos = useMemo(() => services.filter((s: any) => s.active), [services]);
+  // Primer día abierto desde hoy (si hoy el negocio no atiende, no aparecía
+  // ningún horario y parecía que "no se puede elegir").
+  const openWeekdays = useMemo(() => new Set(hours.filter((h: any) => h.active !== false).map((h: any) => h.weekday)), [hours]);
+  const firstOpenDate = () => {
+    const d = new Date();
+    for (let i = 0; i < 14; i++) { if (!openWeekdays.size || openWeekdays.has(d.getDay())) return localDay(d); d.setDate(d.getDate() + 1); }
+    return localDay(new Date());
+  };
   const [serviceId, setServiceId] = useState(activos[0]?.id ?? "");
   const [staffId, setStaffId] = useState("");
-  const [date, setDate] = useState(() => localDay(new Date()));
+  const [date, setDate] = useState(firstOpenDate);
   const [time, setTime] = useState("");
   const [slots, setSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
