@@ -1,4 +1,5 @@
 import Providers from "@/components/layout/providers";
+import { MetaPixel } from "@/components/analytics/meta-pixel";
 import { Toaster } from "@/components/ui/toaster";
 import "@/styles/globals.css";
 import "@/styles/month.css";
@@ -24,6 +25,7 @@ export default function RootLayout({
   return (
     <html lang="es-AR" suppressHydrationWarning>
       <body>
+        <MetaPixel />
         <NextTopLoader color="#e8503a" showSpinner={false} />
         <Providers>
           <Toaster />

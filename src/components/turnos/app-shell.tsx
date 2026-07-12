@@ -82,6 +82,11 @@ function Tab({ active, icon, label, onClick }: any) {
   return <button className={active ? "activo" : ""} onClick={onClick}>{icon}<span>{label}</span><i className="pt" /></button>;
 }
 
+// "?" que lleva a la sección correspondiente de la guía (/ayuda#seccion).
+function HelpDot({ to }: { to: string }) {
+  return <a className="help-dot" href={`/ayuda#${to}`} aria-label="Abrir la guía" title="Ver en la guía">?</a>;
+}
+
 /* ---------- agenda -------------------------------------------------------- */
 
 function buildDay(date: Date, appointments: any[], hours: any[]) {
@@ -365,7 +370,7 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
       <div className="info"><span className="nom">{data.profile.name}</span><span className="sub">{data.profile.address ?? "Sumá tu dirección"}</span></div>
       <ChevronRight />
     </button>
-    <div className="seccion-tit"><h2>Tu página de reservas</h2></div>
+    <div className="seccion-tit"><h2>Tu página de reservas</h2><HelpDot to="pagina" /></div>
     <PublicLink slug={data.tenant.slug} />
     <button className="tarjeta-fila" onClick={onBooking}>
       <span className="emo">🗓️</span>
@@ -377,7 +382,7 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
       <div className="info"><span className="nom">Avisos por email</span><span className="sub">{data.profile.notifyOnBooking ? `Activado · ${data.profile.notifyEmail ?? ""}` : "Recibí un mail por cada reserva"}</span></div>
       <ChevronRight />
     </button>
-    <div className="seccion-tit"><h2>Color de tu marca</h2></div>
+    <div className="seccion-tit"><h2>Color de tu marca</h2><HelpDot to="apariencia" /></div>
     <div className="tema-grid">
       {["#E94F37", "#C5386A", "#7656D6", "#246BCE", "#1B7B94", "#198754", "#C26A12", "#33231A"].map((c) =>
         <button key={c} aria-label={`Usar color ${c}`} onClick={() => setAccentSel(c)} style={{ background: c }} className={`tema-sw ${c.toLowerCase() === accentSel.toLowerCase() ? "sel" : ""}`} />)}
@@ -388,7 +393,7 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
       {!accentValido && <span className="color-hex-err">Hex inválido</span>}
     </div>
     {accentCambio && <button className="btn btn-acento block" style={{ marginTop: 10 }} disabled={pending} onClick={guardarAccent}>{pending ? "Guardando…" : "Guardar color"}</button>}
-    <div className="seccion-tit"><h2>Turnos Pro</h2></div>
+    <div className="seccion-tit"><h2>Turnos Pro</h2><HelpDot to="profesionales" /></div>
     {auto && <button className="tarjeta-fila" onClick={onStaff}>
       <span className="emo">💈</span>
       <div className="info"><span className="nom">Profesionales</span><span className="sub">{data.staff?.length ? `${data.staff.length} cargado${data.staff.length === 1 ? "" : "s"} · cada uno con su agenda` : "Sumá hasta 3 y el cliente elige"}</span></div>
@@ -410,6 +415,11 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
       <ChevronRight />
     </a>
     <div className="seccion-tit"><h2>Ayuda</h2></div>
+    <a className="tarjeta-fila" href="/ayuda">
+      <span className="emo">📖</span>
+      <div className="info"><span className="nom">Guía de uso</span><span className="sub">Cómo funciona todo, sección por sección</span></div>
+      <ChevronRight />
+    </a>
     <a className="tarjeta-fila" href="https://wa.me/5493534797679?text=Hola!%20Necesito%20ayuda%20con%20Imán%20Turnos" target="_blank" rel="noopener noreferrer">
       <span className="emo">💬</span>
       <div className="info"><span className="nom">Contactanos</span><span className="sub">Escribinos por WhatsApp, te ayudamos</span></div>
@@ -441,9 +451,9 @@ function Sheet({ children, onClose }: { children: (close: () => void) => React.R
   </>;
 }
 
-function SheetHead({ title, sub, onClose }: { title: React.ReactNode; sub?: React.ReactNode; onClose: () => void }) {
+function SheetHead({ title, sub, onClose, help }: { title: React.ReactNode; sub?: React.ReactNode; onClose: () => void; help?: string }) {
   return <header className="sheet-head">
-    <div><h3>{title}</h3>{sub && <p>{sub}</p>}</div>
+    <div><h3>{title}{help && <HelpDot to={help} />}</h3>{sub && <p>{sub}</p>}</div>
     <button className="cerrar" aria-label="Cerrar" onClick={onClose}><X /></button>
   </header>;
 }
@@ -472,7 +482,7 @@ function GapSheet({ gap, clients, profile, slug, promotions, auto, close }: any)
   const gapText = (name: string) => `Hola ${name.split(" ")[0]} 👋 Se liberó un lugar de ${hhmm(desde)} a ${hhmm(hasta)} en ${profile.name}.${promo ? ` Además tenés esta promo: ${promo.name}.` : ""} Reservá acá: ${link}`;
 
   return <>
-    <SheetHead title="Llenar hueco" sub="Elegí el horario que ofrecés y a quién avisarle" onClose={close} />
+    <SheetHead title="Llenar hueco" sub="Elegí el horario que ofrecés y a quién avisarle" onClose={close} help="agenda" />
     <div className="sheet-body">
       <div className="fila-2">
         <label className="campo"><span>Desde</span><select value={desde} onChange={(e) => pickDesde(+e.target.value)}>{startOpts.map((m) => <option key={m} value={m}>{hhmm(m)}</option>)}</select></label>
@@ -527,7 +537,7 @@ function ServiceSheet({ close }: any) {
   const [pending, start] = useTransition();
   const [form, set] = useState({ name: "", emoji: "✂️", durationMinutes: 40, priceCents: 900000 });
   return <>
-    <SheetHead title="¿Qué ofrecés?" sub="Nuevo servicio para tu página de reservas" onClose={close} />
+    <SheetHead title="¿Qué ofrecés?" sub="Nuevo servicio para tu página de reservas" onClose={close} help="servicios" />
     <form className="sheet-body" onSubmit={(e) => { e.preventDefault(); start(async () => { await saveService(form); router.refresh(); close(); }); }}>
       <div className="campo"><span>Nombre</span><input required value={form.name} onChange={(e) => set({ ...form, name: e.target.value })} placeholder="Ej: Corte clásico" /></div>
       <div className="fila-2">
@@ -545,7 +555,7 @@ function PromoSheet({ services, close }: any) {
   const [pending, start] = useTransition();
   const [form, set] = useState({ serviceId: services[0]?.id, name: "Corte + regalo", addOnLabel: "Perfilado de cejas", message: "Reservá hoy y te sumamos un perfilado sin cargo.", expiresAt: new Date(Date.now() + 7 * 86400000) });
   return <>
-    <SheetHead title="Armá una promo" sub="3 toques: servicio, regalo y mensaje" onClose={close} />
+    <SheetHead title="Armá una promo" sub="3 toques: servicio, regalo y mensaje" onClose={close} help="promos" />
     <form className="sheet-body" onSubmit={(e) => { e.preventDefault(); start(async () => { await createPromotion(form); router.refresh(); close(); }); }}>
       <div className="campo"><span>1 · Servicio</span><select value={form.serviceId} onChange={(e) => set({ ...form, serviceId: e.target.value })}>{services.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
       <div className="campo"><span>2 · Sumale algo</span><input value={form.addOnLabel} onChange={(e) => set({ ...form, addOnLabel: e.target.value, name: `${services.find((s: any) => s.id === form.serviceId)?.name ?? "Promo"} + regalo` })} /></div>
@@ -606,7 +616,7 @@ function ProfileSheet({ profile, close }: any) {
     start(async () => { await saveProfile(form); router.refresh(); close(); });
   };
   return <>
-    <SheetHead title="Datos y color" sub="Esto se ve en tu página pública" onClose={close} />
+    <SheetHead title="Datos y color" sub="Esto se ve en tu página pública" onClose={close} help="apariencia" />
     <form className="sheet-body" onSubmit={submit}>
       <div className="campo"><span>Logo del negocio</span>
         <div className="logo-fila">
@@ -695,7 +705,7 @@ function BookingSettingsSheet({ tenant, profile, close }: any) {
   const OPTS = [7, 14, 21, 30, 45, 60, 90];
   const CANCEL_OPTS = [{ v: 0, label: "No permitir cancelar online" }, { v: 12, label: "12 horas antes" }, { v: 24, label: "24 horas antes" }, { v: 48, label: "48 horas antes" }, { v: 72, label: "72 horas antes" }, { v: 168, label: "1 semana antes" }];
   return <>
-    <SheetHead title="Reservas y disponibilidad" sub="Tu link, límite de días, cancelación, precios y vacaciones" onClose={close} />
+    <SheetHead title="Reservas y disponibilidad" sub="Tu link, límite de días, cancelación, precios y vacaciones" onClose={close} help="ajustes-reserva" />
     <div className="sheet-body">
       <div className="campo"><span>Identificador del link</span>
         <div className="slug-input"><i>/</i><input value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase())} autoCapitalize="none" spellCheck={false} /><i>/turnos</i></div>
@@ -789,7 +799,7 @@ function ManualSheet({ services, clients, staff = [], hours = [], close }: any) 
   };
 
   return <>
-    <SheetHead title="Nuevo turno" sub="Cargalo a mano — mismo motor de disponibilidad que tu página pública" onClose={close} />
+    <SheetHead title="Nuevo turno" sub="Cargalo a mano — mismo motor de disponibilidad que tu página pública" onClose={close} help="crear-turno" />
     <div className="sheet-body">
       <div className="campo"><span>Servicio</span>
         <select value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
@@ -846,7 +856,7 @@ function ShareSheet({ slug, name, staff = [], close }: any) {
   const native = async () => { try { await (navigator as any).share({ title: name, text: `Reservá tu turno en ${name}`, url: full() }); } catch { /* cancelado */ } };
   const canNative = typeof navigator !== "undefined" && typeof (navigator as any).share === "function";
   return <>
-    <SheetHead title="Compartí tu agenda" sub="Tu link de reservas: bio de Instagram, estado de WhatsApp o directo al cliente" onClose={close} />
+    <SheetHead title="Compartí tu agenda" sub="Tu link de reservas: bio de Instagram, estado de WhatsApp o directo al cliente" onClose={close} help="pagina" />
     <div className="sheet-body">
       <div className="share-link"><span className="url">{path}</span><CopyLinkButton path={path} className="btn sm btn-acento" label="Copiar" /></div>
       <button className="btn block" onClick={wa}><MessageCircle /> Compartir por WhatsApp</button>
@@ -878,7 +888,7 @@ function NotificationsSheet({ profile, close }: any) {
     });
   };
   return <>
-    <SheetHead title="Avisos por email" sub="Recibí un mail cada vez que alguien reserva — tenga o no email el cliente" onClose={close} />
+    <SheetHead title="Avisos por email" sub="Recibí un mail cada vez que alguien reserva — tenga o no email el cliente" onClose={close} help="emails" />
     <div className="sheet-body">
       <label className="switch-fila">
         <div><b>Avisarme cada reserva</b><small>Te llega un email con el turno, el cliente y su WhatsApp.</small></div>
@@ -922,7 +932,7 @@ function StaffSheet({ staff, services = [], close }: any) {
   });
   const toggleNuevo = (serviceId: string) => setNuevoSvc((ids) => ids.includes(serviceId) ? ids.filter((x) => x !== serviceId) : [...ids, serviceId]);
   return <>
-    <SheetHead title="Tu equipo" sub="Hasta 3 profesionales, cada uno con su agenda y sus servicios. El cliente elige con quién." onClose={close} />
+    <SheetHead title="Tu equipo" sub="Hasta 3 profesionales, cada uno con su agenda y sus servicios. El cliente elige con quién." onClose={close} help="profesionales" />
     <div className="sheet-body">
       {staff.map((s: any) => <div className="staff-card" key={s.id}>
         <div className="staff-card-top">
@@ -964,7 +974,7 @@ function ThemeSheet({ profile, close }: any) {
   const cambio = sel !== (profile.theme ?? "clasico");
   const guardar = () => start(async () => { const r = await saveTheme(sel); if (!r.ok) { setError(r.error); return; } location.reload(); });
   return <>
-    <SheetHead title="Tema visual" sub="El estilo de tu página pública de reservas" onClose={close} />
+    <SheetHead title="Tema visual" sub="El estilo de tu página pública de reservas" onClose={close} help="apariencia" />
     <div className="sheet-body">
       <div className="tema-cards">
         {TEMAS_UI.map((t) => <button key={t.id} className={`tema-card ${sel === t.id ? "on" : ""}`} onClick={() => { setSel(t.id); setError(""); }}>

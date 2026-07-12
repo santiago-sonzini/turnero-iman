@@ -5,7 +5,18 @@ import Link from "next/link";
 import { ArrowRight, Check, Clock3, MessageCircle, Scissors, Sparkles } from "lucide-react";
 import { MagnetLogo } from "./magnet-logo";
 
-const whatsapp = "https://wa.me/5493534797679?text=Hola!%20Quiero%20probar%20Im%C3%A1n%20Turnos%20en%20mi%20barber%C3%ADa%20%F0%9F%92%88";
+const whatsapp = "https://wa.me/5493534797679?text=Hola!%20Quiero%20probar%20Im%C3%A1n%20Turnos%20en%20mi%20negocio%20%F0%9F%A7%B2";
+
+// Rubros que soporta Imán (el chip del hero los va rotando).
+const RUBROS = [
+  { emoji: "💈", label: "barberías" },
+  { emoji: "💇", label: "peluquerías" },
+  { emoji: "💅", label: "estudios de uñas" },
+  { emoji: "✨", label: "centros de estética" },
+  { emoji: "💆", label: "spa y masajes" },
+  { emoji: "🎨", label: "estudios de tattoo" },
+  { emoji: "🩺", label: "consultorios" },
+];
 
 const RESENAS = [
   { ini: "NF", name: "Nicolás Fernández", lugar: "Córdoba", text: "Dejé de contestar “¿tenés lugar?” todo el día. Mando el link y reservan solos, hasta cuando estoy cortando." },
@@ -16,15 +27,18 @@ const RESENAS = [
 export function LandingPage() {
   const [demoStep, setDemoStep] = useState(0);
   const [accent, setAccent] = useState("#1B7B94");
+  const [rubro, setRubro] = useState(0);
   const [seconds, setSeconds] = useState(1800);
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) { setDemoStep(5); return; }
     const demo = window.setInterval(() => setDemoStep((step) => (step + 1) % 6), 1500);
     const countdown = window.setInterval(() => setSeconds((value) => value <= 0 ? 1800 : value - 1), 1000);
-    return () => { window.clearInterval(demo); window.clearInterval(countdown); };
+    const rubros = window.setInterval(() => setRubro((r) => (r + 1) % RUBROS.length), 1900);
+    return () => { window.clearInterval(demo); window.clearInterval(countdown); window.clearInterval(rubros); };
   }, []);
   const countdown = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const rb = RUBROS[rubro] ?? RUBROS[0]!;
 
   return <main className="landing">
     <header className="landing-topbar">
@@ -35,11 +49,12 @@ export function LandingPage() {
     <section className="landing-hero" id="inicio">
       <div className="landing-wrap landing-hero-grid">
         <div className="landing-hero-copy">
-          <div className="landing-brand"><MagnetLogo particles /><b>Imán Turnos</b><span>💈 para barberías</span></div>
+          <div className="landing-brand"><MagnetLogo particles /><b>Imán Turnos</b><span className="landing-rubro" key={rubro}>{rb.emoji} para {rb.label}</span></div>
           <h1>Tu agenda llena, sin perseguir a nadie.</h1>
           <p className="landing-sub">Imán Turnos te muestra cada hueco del día y qué cliente tuyo ya está para volver. Un toque, sale el WhatsApp, hueco lleno.</p>
           <div className="landing-actions"><Link className="landing-button primary" href="/auth?modo=signup">Probalo gratis <ArrowRight /></Link><a className="landing-button whatsapp" href={whatsapp} target="_blank"><MessageCircle /> Hablanos por WhatsApp</a></div>
           <p className="landing-micro">7 días gratis · sin tarjeta · listo en 3 minutos</p>
+          <div className="landing-rubros"><span className="landing-rubros-lbl">Hecho para</span>{RUBROS.map((r) => <span key={r.label} className="landing-rubro-chip">{r.emoji} {r.label.charAt(0).toUpperCase() + r.label.slice(1)}</span>)}</div>
         </div>
         <HeroDemo step={demoStep} />
       </div>
@@ -51,7 +66,7 @@ export function LandingPage() {
       <Pain emoji="👻" quote="«Clientes de años que dejaron de venir. Ni me enteré.»"><b>El semáforo te avisa a quién le toca volver</b>, antes de que se pierdan.</Pain>
     </div></div></section>
 
-    <section className="landing-section tint-sol"><div className="landing-wrap"><p className="landing-kicker">SIN CURVA DE APRENDIZAJE</p><h2>Arrancás hoy, en 3 pasos</h2><div className="landing-step-grid"><Step number="1" title="Creá tu cuenta">El nombre de tu barbería y listo. Sin tarjeta.</Step><Step number="2" title="Cargá servicios y horarios">Ajustás precios y tiempos en dos toques.</Step><Step number="3" title="Compartí tu link">En la bio de Instagram y en tu estado. Tus clientes reservan solos.</Step></div><p className="landing-micro centered">⏱️ Menos de 3 minutos. Sin instalar nada.</p></div></section>
+    <section className="landing-section tint-sol"><div className="landing-wrap"><p className="landing-kicker">SIN CURVA DE APRENDIZAJE</p><h2>Arrancás hoy, en 3 pasos</h2><div className="landing-step-grid"><Step number="1" title="Creá tu cuenta">El nombre de tu negocio y listo. Sin tarjeta.</Step><Step number="2" title="Cargá servicios y horarios">Ajustás precios y tiempos en dos toques.</Step><Step number="3" title="Compartí tu link">En la bio de Instagram y en tu estado. Tus clientes reservan solos.</Step></div><p className="landing-micro centered">⏱️ Menos de 3 minutos. Sin instalar nada.</p></div></section>
 
     <section className="landing-section"><div className="landing-wrap landing-showcase"><div><p className="landing-kicker">TU MARCA, NO LA NUESTRA</p><h2>Así lo ve tu cliente</h2><p className="landing-copy">Tu página de reservas con <b>tu color y tu nombre</b>. Entran al link, eligen servicio y horario, confirman. Sin cuenta, sin app.</p><p className="landing-swatch-label">Probá tu color →</p><div className="landing-swatches">{["#1B7B94","#C1272D","#1F7A48","#6C3FA8","#8C5A2B","#33231A"].map((color) => <button key={color} aria-label={`Probar ${color}`} className={accent === color ? "selected" : ""} style={{background:color}} onClick={() => setAccent(color)} />)}</div></div><BookingPreview accent={accent} /></div></section>
 
@@ -72,7 +87,7 @@ export function LandingPage() {
       </div>
     </div></section>
 
-    <section className="landing-section alternate"><div className="landing-wrap landing-faq"><p className="landing-kicker">SIN LETRA CHICA</p><h2>Preguntas de barbero</h2>{[
+    <section className="landing-section alternate"><div className="landing-wrap landing-faq"><p className="landing-kicker">SIN LETRA CHICA</p><h2>Las preguntas de siempre</h2>{[
       ["¿Cuánto sale?","Turnos cuesta $ 15.000 por mes y Turnos Pro $ 30.000. En pesos, sin costo por turno ni sorpresas en dólares."],
       ["¿Mis clientes tienen que bajarse una app?","No. Entran a tu link, eligen horario y confirman. Sin cuenta, app ni contraseña."],
       ["¿Qué pasa con mis datos y mis clientes?","Son tuyos y están separados por negocio. No los compartimos con nadie."],

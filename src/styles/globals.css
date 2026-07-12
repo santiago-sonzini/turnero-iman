@@ -224,6 +224,34 @@ body::after{
 .tema-info small{color:var(--tinta-suave);font-size:.78rem;line-height:1.35}
 .tema-card>svg{width:20px;height:20px;color:var(--acento);flex:none}
 .share-staff-tit{font-weight:900;font-size:.82rem;margin:16px 0 8px;color:var(--tinta)}
+/* ---------- guía / documentación (/ayuda) --------------------------------- */
+.docs{max-width:640px;margin:0 auto;padding:18px 18px 60px}
+.docs-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}
+.docs-brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:600}
+.docs-brand .magnet-logo{width:26px;height:29px}
+.docs h1{font-size:2rem;margin-bottom:8px}
+.docs-lead{color:var(--tinta-suave);font-weight:700;font-size:.95rem;line-height:1.55;margin-bottom:20px}
+.docs-lead a,.docs-foot a{color:var(--acento);font-weight:800}
+.docs-indice{display:grid;grid-template-columns:1fr 1fr;gap:7px;border:var(--borde);border-radius:16px;
+  background:var(--blanco);box-shadow:var(--sombra-dura);padding:14px;margin-bottom:26px}
+.docs-indice a{color:var(--tinta);text-decoration:none;font-weight:800;font-size:.84rem;padding:3px 2px}
+.docs-indice a:hover{color:var(--acento)}
+.docs-sec{border:var(--borde);border-radius:18px;background:var(--blanco);box-shadow:var(--sombra-dura);
+  padding:18px 18px 8px;margin-bottom:14px;scroll-margin-top:16px}
+.docs-sec h2{font-size:1.2rem;margin-bottom:10px}
+.docs-sec p{font-size:.9rem;line-height:1.6;color:var(--tinta-suave);font-weight:600;margin-bottom:12px}
+.docs-sec p b,.docs-sec li b{color:var(--tinta)}
+.docs-sec ul{list-style:none;padding:0;margin:0 0 12px}
+.docs-sec li{font-size:.9rem;line-height:1.6;color:var(--tinta-suave);font-weight:600;padding:5px 0 5px 20px;position:relative}
+.docs-sec li::before{content:"◆";position:absolute;left:2px;color:var(--acento);font-size:.6rem;top:11px}
+.docs-pill{font-size:.6rem;font-weight:900;background:var(--acento);color:#fff;border-radius:99px;padding:3px 8px;vertical-align:middle;margin-left:6px;letter-spacing:.03em}
+.docs-foot{text-align:center;padding:14px 0}
+.docs-foot p{font-weight:700;color:var(--tinta-suave);font-size:.9rem;margin-bottom:14px}
+.help-dot{width:22px;height:22px;flex:none;display:inline-grid;place-items:center;border:2px solid var(--tinta);
+  border-radius:50%;background:var(--blanco);color:var(--tinta);font-weight:900;font-size:.72rem;
+  text-decoration:none;box-shadow:0 2px 0 var(--tinta);margin-left:8px}
+.help-dot:hover{background:var(--acento);color:#fff}
+@media(max-width:480px){.docs-indice{grid-template-columns:1fr}}
 /* logo del negocio (ajustes) */
 .logo-fila{display:flex;align-items:center;gap:10px}
 .logo-prev{width:56px;height:56px;flex:none;display:grid;place-items:center;border:var(--borde);

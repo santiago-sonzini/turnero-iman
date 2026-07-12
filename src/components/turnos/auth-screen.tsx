@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Eye, EyeOff, LockKeyhole, Mail, Scissors, Store } from "lucide-react";
 import { login, signup } from "@/app/actions/auth";
+import { trackFbq } from "@/components/analytics/meta-pixel";
 import { MagnetLogo } from "./magnet-logo";
 
 type Mode = "signin" | "signup";
@@ -30,7 +31,12 @@ export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
       const result = mode === "signup"
         ? await signup({ email, password, negocio: String(formData.get("negocio") ?? "") })
         : await login({ email, password });
-      if (result?.status === 200) setNotice(result.message);
+      if (result?.status === 200) {
+        // Alta creada (con confirmación por email, signup devuelve 200 y se queda
+        // en la pantalla). Conversión de registro para el píxel de Meta.
+        if (mode === "signup") trackFbq("CompleteRegistration");
+        setNotice(result.message);
+      }
       else if (result) setError(result.message);
     });
   }
