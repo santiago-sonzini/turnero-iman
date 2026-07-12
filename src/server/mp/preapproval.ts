@@ -93,6 +93,7 @@ export type MpPreapprovalPlan = {
   status: string; // "active" | "cancelled" | ...
   init_point: string; // checkout de suscripción del plan
   external_reference?: string; // nuestro tenantId
+  back_url?: string; // a dónde vuelve MP tras autorizar (queda grabado en el plan)
   auto_recurring?: MpPreapproval["auto_recurring"];
 };
 
@@ -193,5 +194,6 @@ export async function obtenerPago(id: string): Promise<MpPayment> {
 }
 
 export function appUrl(): string {
-  return env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  // Sin barra final: evita back_url con doble barra (…app//suscripcion/retorno).
+  return (env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 }

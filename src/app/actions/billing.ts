@@ -7,6 +7,7 @@ import { getCurrentTenant } from "@/server/tenant-context";
 import { DIAS_TRIAL, PLANES, formatoArs } from "@/server/plans";
 import {
   actualizarMonto,
+  appUrl,
   cancelarSuscripcionMp,
   crearPlanCompartido,
   mpConfigurado,
@@ -98,11 +99,14 @@ export async function activarPago(): Promise<ResultadoPlan> {
  */
 async function planCompartidoInitPoint(tier: PlanTier): Promise<string> {
   const plan = PLANES[tier];
+  const backUrl = `${appUrl()}/suscripcion/retorno`;
   const guardado = await systemDb.mpPlan.findUnique({ where: { tier } });
   if (guardado && guardado.amountArs === plan.precioArs) {
     try {
       const mp = await obtenerPlan(guardado.mpPlanId);
-      if (mp.status !== "cancelled") return mp.init_point;
+      // Recreamos si cambió la URL pública: el back_url queda grabado en el plan,
+      // así que un plan viejo redirigiría al dominio anterior tras autorizar.
+      if (mp.status !== "cancelled" && mp.back_url === backUrl) return mp.init_point;
     } catch (e) {
       console.error("[mp] plan compartido guardado no recuperable; se recrea", e);
     }
@@ -208,16 +212,25 @@ export async function cancelarSuscripcion(): Promise<ResultadoPlan> {
 export async function confirmarRetorno(preapprovalId: string): Promise<boolean> {
   const tenant = await getCurrentTenant();
   const pre = await obtenerSuscripcion(preapprovalId);
-  // Mapeo a ESTE tenant: por external_reference (lo mandamos en el init_point
-  // del plan compartido) o, como fallback, por el email del pagador.
-  const esDeTenant = pre.external_reference === tenant.id
-    || (!!pre.payer_email && pre.payer_email === tenant.mpPayerEmail);
+
+  // El pagador que vuelve del checkout ES el dueño logueado. Como MP no propaga
+  // el external_reference del init_point de un plan compartido, vinculamos la
+  // suscripción al tenant de la SESIÓN, con guardas:
+  //  - que nazca de UNO DE NUESTROS planes compartidos (no una preapproval ajena);
+  //  - que no esté ya vinculada a OTRO tenant.
+  const esNuestroPlan = !!pre.preapproval_plan_id
+    && !!(await systemDb.mpPlan.findUnique({ where: { mpPlanId: pre.preapproval_plan_id } }));
+  const deOtro = await systemDb.tenant.findFirst({
+    where: { mpPreapprovalId: pre.id, NOT: { id: tenant.id } },
+    select: { id: true },
+  });
+  const esDeTenant = pre.external_reference === tenant.id || (esNuestroPlan && !deOtro);
   if (!esDeTenant) {
-    console.warn("[mp] retorno con preapproval ajena", preapprovalId, tenant.id);
+    console.warn("[mp] retorno con preapproval no vinculable", preapprovalId, tenant.id);
     return false;
   }
-  await sincronizarPreapproval(pre);
-  // Éxito real = MP autorizó el débito. Si sigue "pending" el acceso NO se
-  // habilita hasta que el webhook confirme (la página lo aclara al usuario).
+  // Fijamos el vínculo en el tenant de la sesión (los webhooks siguientes ya lo
+  // encuentran por mpPreapprovalId). Éxito real = MP autorizó el débito.
+  await sincronizarPreapproval(pre, tenant.id);
   return pre.status === "authorized";
 }

@@ -75,8 +75,13 @@ async function tenantDePreapproval(pre: MpPreapproval): Promise<Tenant | null> {
  * Sincroniza el estado del tenant desde una preapproval de MP (fuente de
  * verdad). Se usa desde el webhook Y desde el retorno de autorización.
  */
-export async function sincronizarPreapproval(pre: MpPreapproval): Promise<void> {
-  const tenant = await tenantDePreapproval(pre);
+export async function sincronizarPreapproval(pre: MpPreapproval, tenantIdHint?: string): Promise<void> {
+  // tenantIdHint: el retorno lo pasa con el tenant de la sesión, porque en un
+  // plan compartido MP no propaga external_reference ni (para dinero en cuenta)
+  // el email del pagador — así que el vínculo lo fija quien vuelve del checkout.
+  const tenant = tenantIdHint
+    ? await systemDb.tenant.findUnique({ where: { id: tenantIdHint } })
+    : await tenantDePreapproval(pre);
   if (!tenant) {
     console.warn("[mp] preapproval sin tenant:", pre.id, pre.external_reference);
     return;
