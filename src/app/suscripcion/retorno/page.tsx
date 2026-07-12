@@ -21,23 +21,19 @@ export default async function Retorno({
   }
 
   return (
-    <main className="onb-card text-center">
-      <div className="text-5xl">{ok ? "🧲" : "🤔"}</div>
-      <h1 className="mt-3 text-2xl">
+    <main style={{ textAlign: "center", paddingTop: 20 }}>
+      <div style={{ fontSize: "3.4rem", marginBottom: 10 }}>{ok ? "🧲" : "🤔"}</div>
+      <h1 style={{ fontSize: "1.7rem", marginBottom: 8 }}>
         {ok ? "¡Listo! Débito automático configurado" : "No pudimos confirmar la suscripción"}
       </h1>
-      <p className="onb-sub mt-2">
+      <p className="bk-sub" style={{ maxWidth: "40ch", margin: "0 auto 22px" }}>
         {ok
-          ? "El primer cobro llega cuando termina tu prueba gratis. Mientras tanto, a recuperar clientes."
+          ? "Con el trial de Mercado Pago, el primer cobro llega recién cuando termina tu prueba gratis. Mientras tanto, a recuperar clientes."
           : "Si autorizaste el pago en Mercado Pago, en unos minutos el estado se actualiza solo (nos avisa MP). Podés revisarlo en tu suscripción."}
       </p>
-      <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
-        <Link href="/dashboard" className="onb-btn onb-btn-primario">
-          Ir al panel
-        </Link>
-        <Link href="/suscripcion" className="onb-btn onb-btn-secundario">
-          Ver mi suscripción
-        </Link>
+      <div style={{ display: "grid", gap: 10, maxWidth: 340, margin: "0 auto" }}>
+        <Link href="/app" className="btn btn-acento block">Ir a mi agenda</Link>
+        <Link href="/suscripcion" className="btn block">Ver mi suscripción</Link>
       </div>
     </main>
   );

@@ -1,9 +1,8 @@
-import { notFound } from "next/navigation";
-import { getPublicBooking } from "@/app/actions/turnos";
-import { BookingFlow } from "@/components/turnos/booking-flow";
+import { redirect } from "next/navigation";
 
-export default async function BookingPage({ params, searchParams }: { params: { slug: string }; searchParams: { promo?: string } }) {
-  const initial = await getPublicBooking(params.slug, searchParams.promo);
-  if (!initial) notFound();
-  return <BookingFlow initial={JSON.parse(JSON.stringify(initial))} promoToken={searchParams.promo} />;
+export const dynamic = "force-dynamic";
+
+// Compat: el link viejo /reservar/{slug} ahora vive en /{slug}/turnos.
+export default function ReservarRedirect({ params, searchParams }: { params: { slug: string }; searchParams: { promo?: string } }) {
+  redirect(`/${params.slug}/turnos${searchParams?.promo ? `?promo=${searchParams.promo}` : ""}`);
 }

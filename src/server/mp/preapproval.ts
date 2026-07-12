@@ -9,8 +9,19 @@ import { env } from "@/env";
 
 const MP_API = "https://api.mercadopago.com";
 
+/**
+ * MP listo para operar: hace falta el token Y una URL pública https.
+ * La API de preapproval EXIGE back_url y rechaza localhost, así que sin
+ * NEXT_PUBLIC_APP_URL publicada no hay flujo posible (en dev usá un túnel
+ * o la URL de Vercel si querés probar el checkout real).
+ */
 export function mpConfigurado(): boolean {
-  return !!env.MP_ACCESS_TOKEN;
+  if (!env.MP_ACCESS_TOKEN) return false;
+  if (!appUrl().startsWith("https")) {
+    console.warn("[mp] MP_ACCESS_TOKEN presente pero NEXT_PUBLIC_APP_URL no es https: el checkout queda deshabilitado");
+    return false;
+  }
+  return true;
 }
 
 export class MercadoPagoError extends Error {
@@ -47,11 +58,23 @@ export type MpPreapprovalStatus =
   | "paused"
   | "cancelled";
 
+const autoRecurring = (montoArs: number, trialDias?: number) => {
+  const trial = Math.max(0, Math.floor(trialDias ?? 0));
+  return {
+    frequency: 1,
+    frequency_type: "months" as const,
+    transaction_amount: montoArs,
+    currency_id: "ARS" as const,
+    ...(trial > 0 ? { free_trial: { frequency: trial, frequency_type: "days" as const } } : {}),
+  };
+};
+
 export type MpPreapproval = {
   id: string;
   status: MpPreapprovalStatus;
   init_point: string; // URL donde el payer autoriza / gestiona el débito
   external_reference?: string; // nuestro tenantId
+  preapproval_plan_id?: string; // si nació de un plan, apunta al plan
   payer_email?: string;
   reason?: string;
   auto_recurring?: {
@@ -61,39 +84,58 @@ export type MpPreapproval = {
     currency_id: string;
     start_date?: string;
     end_date?: string;
+    free_trial?: { frequency: number; frequency_type: "months" | "days" };
   };
 };
 
+export type MpPreapprovalPlan = {
+  id: string;
+  status: string; // "active" | "cancelled" | ...
+  init_point: string; // checkout de suscripción del plan
+  external_reference?: string; // nuestro tenantId
+  auto_recurring?: MpPreapproval["auto_recurring"];
+};
+
 /**
- * Crea la suscripción (débito automático mensual en ARS) y devuelve el
- * init_point al que hay que redirigir al usuario para que la autorice.
- * `inicio`: primer débito (fin del trial). external_reference = tenantId:
- * es como el webhook encuentra al tenant sin confiar en el cliente.
+ * Crea un PLAN de suscripción (preapproval_plan) COMPARTIDO y devuelve su
+ * init_point. Se crea una sola plantilla por tier y todos los tenants suscriben
+ * sobre ella (el mapeo tenant↔suscripción se resuelve con external_reference en
+ * el init_point + email del pagador, no con un plan por cliente).
+ *
+ * Se usa el flujo de plan (no /preapproval directo) por dos motivos verificados
+ * contra la API: (1) el preapproval directo con free_trial devuelve HTTP 500;
+ * (2) `payment_methods_allowed` SOLO lo respeta MP a nivel plan (en el
+ * preapproval directo lo ignora), y sin él el checkout habilita solo crédito.
+ * `trialDias > 0` activa el free_trial nativo.
  */
-export async function crearSuscripcion(params: {
-  tenantId: string;
-  payerEmail: string;
+export async function crearPlanCompartido(params: {
   razon: string;
   montoArs: number;
-  inicio: Date;
-}): Promise<MpPreapproval> {
-  return mp<MpPreapproval>("/preapproval", {
+  trialDias?: number;
+}): Promise<MpPreapprovalPlan> {
+  return mp<MpPreapprovalPlan>("/preapproval_plan", {
     method: "POST",
     body: JSON.stringify({
       reason: params.razon,
-      external_reference: params.tenantId,
-      payer_email: params.payerEmail,
       back_url: `${appUrl()}/suscripcion/retorno`,
-      auto_recurring: {
-        frequency: 1,
-        frequency_type: "months",
-        transaction_amount: params.montoArs,
-        currency_id: "ARS",
-        start_date: params.inicio.toISOString(),
+      auto_recurring: autoRecurring(params.montoArs, params.trialDias),
+      // Sin esto MP habilita SOLO tarjeta de crédito en el checkout. Declaramos
+      // todos los medios que soporta una suscripción para que el cliente pueda
+      // pagar con crédito, débito, prepaga o dinero en cuenta (efectivo no aplica).
+      payment_methods_allowed: {
+        payment_types: [
+          { id: "credit_card" },
+          { id: "debit_card" },
+          { id: "prepaid_card" },
+          { id: "account_money" },
+        ],
       },
-      status: "pending",
     }),
   });
+}
+
+export async function obtenerPlan(id: string): Promise<MpPreapprovalPlan> {
+  return mp<MpPreapprovalPlan>(`/preapproval_plan/${id}`);
 }
 
 export async function obtenerSuscripcion(id: string): Promise<MpPreapproval> {

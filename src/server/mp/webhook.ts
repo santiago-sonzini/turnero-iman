@@ -60,9 +60,13 @@ async function tenantDePreapproval(pre: MpPreapproval): Promise<Tenant | null> {
   });
   if (porId) return porId;
   if (pre.external_reference) {
-    return systemDb.tenant.findUnique({
-      where: { id: pre.external_reference },
-    });
+    const porRef = await systemDb.tenant.findUnique({ where: { id: pre.external_reference } });
+    if (porRef) return porRef;
+  }
+  // Plan compartido: el preapproval_plan_id NO distingue tenants (es el mismo
+  // para todos los del tier), así que el fallback es el email del pagador.
+  if (pre.payer_email) {
+    return systemDb.tenant.findFirst({ where: { mpPayerEmail: pre.payer_email } });
   }
   return null;
 }
@@ -90,9 +94,11 @@ export async function sincronizarPreapproval(pre: MpPreapproval): Promise<void> 
   switch (pre.status) {
     case "authorized":
       // Autorizó el débito: si el trial sigue corriendo queda TRIALING (el
-      // primer cobro llega en start_date); si no, ACTIVE.
+      // primer cobro llega en start_date); si no, ACTIVE. Recién acá se abre el
+      // acceso del flujo con pago, así que damos por cerrado el onboarding.
       data.planStatus = enTrial ? "TRIALING" : "ACTIVE";
       data.graceUntil = null;
+      data.onboardingStep = "listo";
       if (tenant.planStatus !== "ACTIVE" && tenant.planStatus !== "TRIALING") {
         await trackFor(tenant.id, "suscripcion_autorizada", { preapproval: pre.id });
       }

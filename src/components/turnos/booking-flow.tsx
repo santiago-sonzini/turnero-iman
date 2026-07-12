@@ -1,26 +1,235 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { ArrowLeft, Check, Clock3, MapPin } from "lucide-react";
-import { bookPublic, publicAvailability } from "@/app/actions/turnos";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, CalendarPlus, Check, Clock3, MapPin, MessageCircle } from "lucide-react";
+import { bookPublic, cancelPublicAppointment } from "@/app/actions/turnos";
+import { computeSlots, isVacation } from "@/lib/availability";
 import { MagnetLogo } from "./magnet-logo";
 
 const money = (c: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 0 }).format(c / 100);
+const CONFETI = ["#E94F37", "#FFC53D", "#35B36B", "#246BCE", "#7656D6", "#FFFDF8"];
+
 export function BookingFlow({ initial, promoToken }: { initial: any; promoToken?: string }) {
-  const [step, setStep] = useState(0); const [service, setService] = useState<any>(null); const [date, setDate] = useState(""); const [time, setTime] = useState("");
-  const [slots, setSlots] = useState<string[]>([]); const [loading, start] = useTransition(); const [result, setResult] = useState<any>(null);
+  const [step, setStep] = useState(0);
+  const [service, setService] = useState<any>(null);
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [saving, start] = useTransition();
+  const [result, setResult] = useState<any>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
-  const days = Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()+i);return d;});
-  useEffect(()=>{if(service&&date) start(async()=>setSlots(await publicAvailability(initial.tenant.slug,service.id,date)))},[service,date]);
-  const submit = () => start(async()=>{const r=await bookPublic({slug:initial.tenant.slug,serviceId:service.id,date,time,...form,promoToken});setResult(r);if(r.ok)setStep(3)});
-  return <main className="booking-page" style={{"--acento":initial.profile.accent} as React.CSSProperties}>
-    <header className="booking-brand"><MagnetLogo particles/><div><b>{initial.profile.name}</b><small><MapPin/> {initial.profile.address}</small></div></header>
-    {initial.promo && <div className="promo-banner"><span>🎁</span><div><b>{initial.promo.name}</b><p>{initial.promo.message}</p></div></div>}
-    <div className="booking-progress">{[0,1,2].map(i=><i key={i} className={i<=step?"on":""}/>)}</div>
-    {step===0&&<section><p className="eyebrow">ELEGÍ TU SERVICIO</p><h1>¿Qué te hacemos?</h1><div className="booking-options">{initial.services.map((s:any)=><button key={s.id} onClick={()=>{setService(s);setStep(1)}}><span>{s.emoji}</span><div><b>{s.name}</b><small><Clock3/> {s.durationMinutes} min</small></div><strong>{money(s.priceCents)}</strong></button>)}</div></section>}
-    {step===1&&<section><button className="back-link" onClick={()=>setStep(0)}><ArrowLeft/> Cambiar servicio</button><p className="eyebrow">DÍA Y HORA</p><h1>¿Cuándo venís?</h1><div className="booking-days">{days.map(d=>{const key=new Intl.DateTimeFormat("en-CA").format(d);return <button key={key} className={date===key?"on":""} onClick={()=>{setDate(key);setTime("")}}><small>{d.toLocaleDateString("es-AR",{weekday:"short"})}</small><b>{d.getDate()}</b></button>})}</div>{date&&<><h3 className="slot-title">Horarios disponibles</h3><div className="slots">{loading?<p>Buscando huecos…</p>:slots.length?slots.map(s=><button className={time===s?"on":""} onClick={()=>setTime(s)} key={s}>{s}</button>):<p>No quedan horarios ese día.</p>}</div></>}<button className="button accent" disabled={!time} onClick={()=>setStep(2)}>Continuar</button></section>}
-    {step===2&&<section><button className="back-link" onClick={()=>setStep(1)}><ArrowLeft/> Cambiar horario</button><p className="eyebrow">ÚLTIMO PASO</p><h1>¿A nombre de quién?</h1><div className="booking-summary"><span>{service.emoji}</span><div><b>{service.name}</b><small>{date.split("-").reverse().join("/")} · {time}</small></div></div><label className="field"><span>Tu nombre</span><input autoComplete="name" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label className="field"><span>WhatsApp</span><input type="tel" inputMode="tel" placeholder="351 555 0194" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/><small>Te contactamos por acá si hay algún cambio.</small></label><label className="field"><span>Email <em>opcional</em></span><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><div className="deposit-hook mini"><span>🔒</span><p>Señas online: próximamente</p></div>{result&&!result.ok&&<p className="form-error">{result.error}</p>}<button className="button accent" disabled={loading||form.name.trim().length<2||form.phone.replace(/\D/g,"").length<8} onClick={submit}>{loading?"Guardando…":"Confirmar turno"}</button></section>}
-    {step===3&&<section className="confirmed"><span className="check"><Check/></span><p className="eyebrow">¡LISTO!</p><h1>Tu turno está confirmado</h1><div className="booking-summary"><span>{service.emoji}</span><div><b>{service.name}</b><small>{date.split("-").reverse().join("/")} · {time}</small></div></div><p>Te esperamos en {initial.profile.address}. Guardá el WhatsApp del negocio por cualquier cambio.</p><a className="button wa" href={`https://wa.me/54${initial.profile.phone?.replace(/\D/g,"")}`} target="_blank">Escribir al negocio</a></section>}
-    <footer>Reservas con <MagnetLogo/> <b>Imán Turnos</b></footer>
+  const [marketingConsent, setMarketingConsent] = useState(true);
+
+  const showPrices = initial.profile.showPrices !== false;
+  const vacations = initial.profile.vacations ?? [];
+  const horizonDays = Math.min(90, Math.max(1, initial.horizonDays ?? 14));
+  const days = useMemo(() => Array.from({ length: horizonDays }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d; }), [horizonDays]);
+  const openWeekdays = useMemo(() => new Set(initial.hours.map((h: any) => h.weekday)), [initial.hours]);
+
+  // Disponibilidad calculada al instante en el cliente: la página llega del
+  // server con las ventanas ocupadas del horizonte configurado (nada de
+  // "Buscando huecos…"). El server igual re-valida al confirmar.
+  const slots = useMemo(() => {
+    if (!service || !date) return [];
+    return computeSlots({ date, durationMinutes: service.durationMinutes, hours: initial.hours, busy: initial.busy ?? [], rules: initial.profile, vacations });
+  }, [service, date, initial, vacations]);
+
+  const submit = () => start(async () => {
+    const r = await bookPublic({ slug: initial.tenant.slug, serviceId: service.id, date, time, ...form, marketingConsent, promoToken });
+    setResult(r);
+    if (r.ok) { setStep(3); window.scrollTo({ top: 0 }); }
+  });
+
+  const prettyDate = date ? new Date(`${date}T12:00:00-03:00`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" }) : "";
+
+  const addToCalendar = () => {
+    const startAt = new Date(`${date}T${time}:00-03:00`);
+    const endAt = new Date(startAt.getTime() + service.durationMinutes * 60000);
+    const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    const title = `${service.emoji} ${service.name} — ${initial.profile.name}`;
+    const location = initial.profile.address ?? "";
+    if (/android/i.test(navigator.userAgent)) {
+      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${fmt(startAt)}/${fmt(endAt)}&location=${encodeURIComponent(location)}&details=${encodeURIComponent(`Turno en ${initial.profile.name}. Reservado con Imán Turnos.`)}`;
+      window.open(url, "_blank");
+      return;
+    }
+    const ics = [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Iman Turnos//ES", "BEGIN:VEVENT",
+      `UID:${date}-${time.replace(":", "")}@iman-turnos`,
+      `DTSTAMP:${fmt(new Date())}`, `DTSTART:${fmt(startAt)}`, `DTEND:${fmt(endAt)}`,
+      `SUMMARY:${title}`, `LOCATION:${location}`,
+      `DESCRIPTION:Turno en ${initial.profile.name}. Reservado con Imán Turnos.`,
+      "END:VEVENT", "END:VCALENDAR",
+    ].join("\r\n");
+    const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = "turno.ics"; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+
+  return <main className="bk" style={{ "--acento": initial.profile.accent } as React.CSSProperties}>
+    <header className="bk-hero">
+      <span className="powered"><MagnetLogo /> Imán Turnos</span>
+      <div className="foto">{initial.services[0]?.emoji ?? "🧲"}</div>
+      <h1>{initial.profile.name}</h1>
+      {initial.profile.mapsUrl
+        ? <a className="meta meta-link" href={initial.profile.mapsUrl} target="_blank" rel="noopener noreferrer"><MapPin /> {initial.profile.address || "Cómo llegar"}</a>
+        : initial.profile.address && <p className="meta"><MapPin /> {initial.profile.address}</p>}
+    </header>
+
+    {initial.promo && step < 3 && <div className="promo-banner"><span>🎁</span><div><b>{initial.promo.name}</b><p>{initial.promo.message}</p></div></div>}
+
+    {step < 3 && <div className="bk-prog">
+      {[0, 1, 2].map((i) => <span key={i} className={`step ${i < step ? "done" : i === step ? "now" : ""}`}><i /></span>)}
+    </div>}
+
+    {step === 0 && <section className="bk-body">
+      {initial.misTurnos && <ReturningClient mis={initial.misTurnos} slug={initial.tenant.slug} windowHours={initial.profile.cancelWindowHours ?? 48} />}
+      <h2 className="bk-titulo">¿Qué te hacemos?</h2>
+      <p className="bk-sub">Elegí un servicio para ver los horarios libres.</p>
+      {initial.services.map((s: any) => <button className="svc" key={s.id} onClick={() => { setService(s); setDate(""); setTime(""); setStep(1); }}>
+        <span className="em">{s.emoji}</span>
+        <span className="info"><span className="nom">{s.name}</span><span className="dur"><Clock3 /> {s.durationMinutes} min</span></span>
+        {showPrices && <span className="precio">{money(s.priceCents)}</span>}
+      </button>)}
+    </section>}
+
+    {step === 1 && <section className="bk-body">
+      <button className="bk-volver" onClick={() => setStep(0)}><ArrowLeft /> Cambiar servicio</button>
+      <h2 className="bk-titulo">¿Cuándo venís?</h2>
+      <p className="bk-sub">{service.emoji} {service.name} · {service.durationMinutes} min</p>
+      <div className="dias-scroll">
+        {days.map((d) => {
+          const key = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+          const closed = !openWeekdays.has(d.getDay()) || isVacation(key, vacations);
+          return <button key={key} disabled={closed} className={`dia-pastilla ${date === key ? "sel" : ""} ${closed ? "cerrado" : ""}`} onClick={() => { setDate(key); setTime(""); }}>
+            <span className="dow">{d.toLocaleDateString("es-AR", { weekday: "short" })}</span>
+            <span className="num">{d.getDate()}</span>
+            <span className="mes">{d.toLocaleDateString("es-AR", { month: "short" })}</span>
+          </button>;
+        })}
+      </div>
+      {date && <>
+        <h3 className="bk-titulo" style={{ fontSize: "1.08rem" }}>Horarios libres</h3>
+        <div className="horas-grid">
+          {slots.length
+            ? slots.map((s) => <button key={s} className={`hora-btn ${time === s ? "sel" : ""}`} onClick={() => setTime(s)}>{s}</button>)
+            : <p className="sin-horas">No quedan horarios ese día. Probá con otro 🙏</p>}
+        </div>
+      </>}
+      <div className="bk-cta"><button className="btn btn-acento block" disabled={!time} onClick={() => setStep(2)}>Continuar</button></div>
+    </section>}
+
+    {step === 2 && <section className="bk-body">
+      <button className="bk-volver" onClick={() => { setResult(null); setStep(1); }}><ArrowLeft /> Cambiar horario</button>
+      <h2 className="bk-titulo">¿A nombre de quién?</h2>
+      <p className="bk-sub">Último paso y el turno queda tuyo.</p>
+      <div className="resumen">
+        <div className="r-fila"><span className="k">Servicio</span><span className="v">{service.emoji} {service.name}</span></div>
+        <div className="r-fila"><span className="k">Día</span><span className="v">{prettyDate}</span></div>
+        <div className="r-fila"><span className="k">Hora</span><span className="v">{time}</span></div>
+        {showPrices && <div className="r-fila r-total"><span className="k">Total</span><span className="v">{money(service.priceCents)}</span></div>}
+      </div>
+      <div className="campo"><span>Tu nombre</span><input autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+      <div className="campo"><span>WhatsApp</span><input type="tel" inputMode="tel" placeholder="351 555 0194" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        <p className="ayuda">Te contactamos por acá si hay algún cambio.</p></div>
+      <div className="campo"><span>Email <em className="opt">opcional</em></span><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+      <button type="button" className={`consent ${marketingConsent ? "on" : ""}`} aria-pressed={marketingConsent} onClick={() => setMarketingConsent((v) => !v)}>
+        <Smiley happy={marketingConsent} />
+        <span className="info">
+          <b>Quiero recibir promociones y recordatorios</b>
+          <small>{marketingConsent ? "¡Genial! Te avisamos de huecos y promos 🎉" : "No te vamos a mandar promos ni recordatorios"}</small>
+        </span>
+        <span className="check">{marketingConsent && <Check />}</span>
+      </button>
+      {result && !result.ok && <p className="form-error">{result.error}</p>}
+      <div className="bk-cta">
+        <button className="btn btn-acento block" disabled={saving || form.name.trim().length < 2 || form.phone.replace(/\D/g, "").length < 8} onClick={submit}>
+          {saving ? "Guardando tu turno…" : "Confirmar turno"}
+        </button>
+      </div>
+    </section>}
+
+    {step === 3 && <section className="bk-ok">
+      <div className="confeti" aria-hidden="true">
+        {Array.from({ length: 26 }, (_, i) => <i key={i} style={{
+          left: `${(i * 37) % 100}%`,
+          background: CONFETI[i % CONFETI.length],
+          animationDuration: `${2.2 + ((i * 13) % 10) / 6}s`,
+          animationDelay: `${((i * 7) % 12) / 10}s`,
+        }} />)}
+      </div>
+      <div className="marca-ok"><Check strokeWidth={3} /></div>
+      <h1>¡Turno confirmado!</h1>
+      <p className="sub">{prettyDate} · {time} hs</p>
+      <div className="resumen">
+        <div className="r-fila"><span className="k">Servicio</span><span className="v">{service.emoji} {service.name}</span></div>
+        {(initial.profile.address || initial.profile.mapsUrl) && <div className="r-fila"><span className="k">Dónde</span><span className="v">{initial.profile.mapsUrl
+          ? <a href={initial.profile.mapsUrl} target="_blank" rel="noopener noreferrer" className="meta-link">{initial.profile.address || "Ver en Maps"}</a>
+          : initial.profile.address}</span></div>}
+        {showPrices && <div className="r-fila r-total"><span className="k">Total</span><span className="v">{money(service.priceCents)}</span></div>}
+      </div>
+      <div className="bk-ok-acciones">
+        <button className="btn btn-acento block" onClick={addToCalendar}><CalendarPlus /> Agregar a calendario</button>
+        {initial.profile.phone && <a className="btn btn-wa block" href={`https://wa.me/54${initial.profile.phone.replace(/\D/g, "")}`} target="_blank"><MessageCircle /> Escribir al negocio</a>}
+      </div>
+    </section>}
+
+    <footer className="bk-foot">Reservas con <MagnetLogo /> <b>Imán Turnos</b></footer>
   </main>;
+}
+
+// Cliente que ya reservó antes (cookie con su token): saludo, sus turnos y
+// cancelación online hasta N horas antes (N lo define el negocio).
+function ReturningClient({ mis, slug, windowHours }: { mis: any; slug: string; windowHours: number }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const now = Date.now();
+  const winMs = (windowHours ?? 48) * 3_600_000;
+  const fmt = (v: string) => new Date(v).toLocaleString("es-AR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  const fmtDay = (v: string) => new Date(v).toLocaleDateString("es-AR", { day: "numeric", month: "long" });
+  const upcoming = mis.appointments.filter((a: any) => new Date(a.startsAt).getTime() >= now).sort((a: any, b: any) => +new Date(a.startsAt) - +new Date(b.startsAt));
+  const last = mis.appointments.find((a: any) => new Date(a.startsAt).getTime() < now);
+  const cancel = (id: string) => start(async () => {
+    setError("");
+    const r = await cancelPublicAppointment(slug, id);
+    if (!r.ok) { setError(r.error); setConfirmId(null); return; }
+    setConfirmId(null);
+    router.refresh();
+  });
+  return <div className="mis-turnos">
+    <div className="mt-head"><Smiley happy /><div><b>¡Hola de nuevo, {mis.name.split(" ")[0]}! 👋</b><small>{upcoming.length ? "Tus próximos turnos" : "Reservá tu próximo turno acá abajo"}</small></div></div>
+    {upcoming.map((a: any) => {
+      const cancelable = windowHours > 0 && new Date(a.startsAt).getTime() - winMs > now;
+      return <div className="mt-row" key={a.id}>
+        <span className="em">{a.service.emoji}</span>
+        <div className="info"><b>{a.service.name}</b><small>{fmt(a.startsAt)} hs</small></div>
+        {confirmId === a.id
+          ? <span className="mt-confirm"><button className="si" disabled={pending} onClick={() => cancel(a.id)}>{pending ? "…" : "Sí"}</button><button className="no" disabled={pending} onClick={() => setConfirmId(null)}>No</button></span>
+          : cancelable
+            ? <button className="mt-cancel" onClick={() => setConfirmId(a.id)}>Cancelar</button>
+            : <em>Reservado</em>}
+      </div>;
+    })}
+    {upcoming.length > 0 && windowHours > 0 && <p className="mt-note">Podés cancelar online hasta {windowHours} h antes del turno.</p>}
+    {error && <p className="form-error" style={{ marginTop: 8 }}>{error}</p>}
+    {!upcoming.length && last && <p className="mt-last">Tu última visita fue <b>{last.service.name}</b> el {fmtDay(last.startsAt)}.</p>}
+  </div>;
+}
+
+// Carita que sonríe con el consentimiento activado y se entristece al apagarlo.
+function Smiley({ happy }: { happy: boolean }) {
+  return (
+    <svg className={`smiley ${happy ? "happy" : "sad"}`} viewBox="0 0 48 48" aria-hidden="true">
+      <circle className="face" cx="24" cy="24" r="20" />
+      <circle className="eye" cx="17.5" cy="20" r="2.4" />
+      <circle className="eye" cx="30.5" cy="20" r="2.4" />
+      <circle className="cheek" cx="13" cy="27" r="2.8" />
+      <circle className="cheek" cx="35" cy="27" r="2.8" />
+      <path className="mouth smile" d="M15 28 Q24 37 33 28" />
+      <path className="mouth frown" d="M15 33 Q24 25 33 33" />
+    </svg>
+  );
 }

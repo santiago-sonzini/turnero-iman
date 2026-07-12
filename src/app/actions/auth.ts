@@ -3,10 +3,11 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
-import { getUser } from './users';
+import { getUser } from '@/server/users';
 import { db, DEMO_MODE, systemDb } from '@/server/db';
 import { createClientServer } from '@/lib/user';
 import { trackFor } from '@/server/track';
+import { ensureUniqueSlug } from '@/lib/slug';
 
 export async function login(values: any) {
   // Modo demo: sin Supabase configurado no hay login real.
@@ -28,7 +29,7 @@ export async function login(values: any) {
       const tenant = await systemDb.tenant.findUnique({
         where: { id: res.data.tenantId },
       })
-      redirect(tenant?.planStatus === "ONBOARDING" ? "/onboarding" : "/app")
+      redirect(tenant?.planStatus === "ONBOARDING" ? "/onboarding" : `/${tenant?.slug}`)
     } else {
       return { status: 401, message: "Error al recuperar usuario" }
     }
@@ -37,16 +38,11 @@ export async function login(values: any) {
   redirect('/')
 }
 
-// Slug único para el tenant a partir del nombre del negocio.
-function slugDe(nombre: string): string {
-  const base = nombre
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 40) || "negocio";
-  return `${base}-${Math.random().toString(36).slice(2, 6)}`;
+// Slug único (identificador de link) a partir del nombre del negocio.
+async function slugDe(nombre: string): Promise<string> {
+  return ensureUniqueSlug(nombre, async (slug) =>
+    !!(await systemDb.tenant.findUnique({ where: { slug }, select: { id: true } }))
+  );
 }
 
 /**
@@ -83,7 +79,7 @@ export async function signup(values: {
     const tenant = await systemDb.tenant.create({
       data: {
         name: values.negocio,
-        slug: slugDe(values.negocio),
+        slug: await slugDe(values.negocio),
         planStatus: "ONBOARDING",
         onboardingStep: "negocio",
       },
@@ -118,9 +114,7 @@ export async function signup(values: {
 export async function signOut() {
   if (DEMO_MODE) redirect('/')
   const supabase = await createClientServer()
-  const { error } = await supabase.auth.signOut()
-  if (!error) {
-    revalidatePath('/auth/signin')
-    redirect('/auth/signin')
-  }
+  await supabase.auth.signOut()
+  revalidatePath('/', 'layout')
+  redirect('/auth')
 }

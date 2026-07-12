@@ -1,17 +1,20 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { db, systemDb } from "@/server/db";
 import { getCurrentTenant } from "@/server/tenant-context";
 import { requireFeature } from "@/server/gate";
+import { computeSlots, isVacation, localDate, type Vacation } from "@/lib/availability";
+import { ensureUniqueSlug, isValidSlug } from "@/lib/slug";
+import { appUrl } from "@/server/mp/preapproval";
 import { z } from "zod";
 
 const phone = (value: string) => value.replace(/\D/g, "").replace(/^0+/, "");
-const localDate = (date: string, minutes: number) => {
-  const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
-  const mm = String(minutes % 60).padStart(2, "0");
-  return new Date(`${date}T${hh}:${mm}:00-03:00`);
-};
+const horizonOf = (profile: { bookingHorizonDays: number }) => Math.min(90, Math.max(1, profile.bookingHorizonDays || 30));
+const clientCookie = (tenantId: string) => `iman_cli_${tenantId}`;
+const localDayAR = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
 
 export async function getOwnerData(from: Date, to: Date) {
   const tenant = await getCurrentTenant();
@@ -33,70 +36,105 @@ export async function getOwnerData(from: Date, to: Date) {
 export async function getPublicBooking(slug: string, promoToken?: string) {
   const tenant = await systemDb.tenant.findUnique({ where: { slug }, include: { profile: true } });
   if (!tenant?.profile) return null;
-  const [services, hours, promo] = await Promise.all([
+  const now = new Date();
+  const horizonDays = horizonOf(tenant.profile);
+  const horizon = new Date(now.getTime() + (horizonDays + 1) * 86_400_000);
+  const token = cookies().get(clientCookie(tenant.id))?.value;
+  const [services, hours, busy, promo, returning] = await Promise.all([
     systemDb.service.findMany({ where: { tenantId: tenant.id, active: true }, orderBy: { sortOrder: "asc" } }),
     systemDb.workingHour.findMany({ where: { tenantId: tenant.id, active: true } }),
+    // Ventanas ocupadas del horizonte completo: el cliente calcula los
+    // huecos al instante, sin volver al server ("buscando huecos" ya no espera).
+    systemDb.appointment.findMany({
+      where: { tenantId: tenant.id, status: { not: "CANCELADO" }, endsAt: { gte: now }, startsAt: { lte: horizon } },
+      select: { startsAt: true, endsAt: true },
+    }),
     promoToken ? systemDb.promotion.findFirst({ where: { tenantId: tenant.id, token: promoToken, active: true, expiresAt: { gt: new Date() } } }) : null,
+    // Cliente que ya reservó antes (cookie con su token): sus turnos.
+    token ? systemDb.client.findFirst({
+      where: { tenantId: tenant.id, accessToken: token },
+      include: { appointments: { where: { status: { not: "CANCELADO" } }, include: { service: true }, orderBy: { startsAt: "desc" }, take: 12 } },
+    }) : null,
   ]);
-  return { tenant, profile: tenant.profile, services, hours, promo };
+  const misTurnos = returning
+    ? { name: returning.name, appointments: returning.appointments }
+    : null;
+  return { tenant, profile: tenant.profile, services, hours, busy, promo, horizonDays, misTurnos };
 }
 
 export async function publicAvailability(slug: string, serviceId: string, date: string) {
-  const tenant = await systemDb.tenant.findUnique({ where: { slug }, include: { profile: true } });
-  if (!tenant?.profile) return [];
-  const service = await systemDb.service.findFirst({ where: { id: serviceId, tenantId: tenant.id, active: true } });
-  if (!service) return [];
-  const noon = localDate(date, 720);
-  const weekday = noon.getUTCDay();
-  const intervals = await systemDb.workingHour.findMany({ where: { tenantId: tenant.id, weekday, active: true } });
-  const startDay = localDate(date, 0);
-  const endDay = localDate(date, 1439);
-  const busy = await systemDb.appointment.findMany({ where: { tenantId: tenant.id, status: { not: "CANCELADO" }, startsAt: { lte: endDay }, endsAt: { gte: startDay } } });
-  const now = new Date(Date.now() + tenant.profile.bookingLeadMinutes * 60000);
-  const slots: string[] = [];
-  for (const interval of intervals) {
-    for (let m = interval.startMinutes; m + service.durationMinutes <= interval.endMinutes; m += tenant.profile.slotStepMinutes) {
-      const startsAt = localDate(date, m);
-      const endsAt = new Date(startsAt.getTime() + (service.durationMinutes + tenant.profile.bufferMinutes) * 60000);
-      if (startsAt <= now) continue;
-      if (!busy.some((a) => startsAt < a.endsAt && endsAt > a.startsAt)) slots.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
-    }
-  }
-  return slots;
+  const service = await systemDb.service.findFirst({
+    where: { id: serviceId, active: true, tenant: { slug } },
+    include: { tenant: { include: { profile: true } } },
+  });
+  if (!service?.tenant.profile) return [];
+  const [busy, hours] = await Promise.all([
+    systemDb.appointment.findMany({
+      where: { tenantId: service.tenantId, status: { not: "CANCELADO" }, startsAt: { lte: localDate(date, 1439) }, endsAt: { gte: localDate(date, 0) } },
+      select: { startsAt: true, endsAt: true },
+    }),
+    systemDb.workingHour.findMany({ where: { tenantId: service.tenantId, active: true } }),
+  ]);
+  return computeSlots({ date, durationMinutes: service.durationMinutes, hours, busy, rules: service.tenant.profile });
 }
 
 const bookingSchema = z.object({
   slug: z.string().min(1), serviceId: z.string().min(1), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/), name: z.string().trim().min(2).max(80),
-  phone: z.string().min(8), email: z.string().email().optional().or(z.literal("")), promoToken: z.string().optional(),
+  phone: z.string().min(8), email: z.string().email().optional().or(z.literal("")),
+  promoToken: z.string().optional(), marketingConsent: z.boolean().optional(),
 });
 
 export async function bookPublic(input: z.infer<typeof bookingSchema>) {
   const parsed = bookingSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Revisá tus datos." };
   const data = parsed.data;
-  const tenant = await systemDb.tenant.findUnique({ where: { slug: data.slug }, include: { profile: true } });
+  // Una sola query trae servicio + tenant + perfil; después una de ocupación.
+  const service = await systemDb.service.findFirst({
+    where: { id: data.serviceId, active: true, tenant: { slug: data.slug } },
+    include: { tenant: { include: { profile: true } } },
+  });
+  const tenant = service?.tenant;
   if (!tenant?.profile) return { ok: false as const, error: "El negocio no está disponible." };
-  const service = await systemDb.service.findFirst({ where: { id: data.serviceId, tenantId: tenant.id, active: true } });
   if (!service) return { ok: false as const, error: "Ese servicio ya no está disponible." };
-  const available = await publicAvailability(data.slug, data.serviceId, data.date);
+  const vacations = (tenant.profile.vacations as Vacation[] | null) ?? null;
+  if (isVacation(data.date, vacations)) return { ok: false as const, error: "El negocio no atiende ese día." };
+  // Límite de agenda: no se puede reservar más allá del horizonte configurado.
+  const maxDay = localDayAR(new Date(Date.now() + horizonOf(tenant.profile) * 86_400_000));
+  if (data.date > maxDay) return { ok: false as const, error: "Ese día todavía no está habilitado para reservar." };
+  const [busy, hours] = await Promise.all([
+    systemDb.appointment.findMany({
+      where: { tenantId: tenant.id, status: { not: "CANCELADO" }, startsAt: { lte: localDate(data.date, 1439) }, endsAt: { gte: localDate(data.date, 0) } },
+      select: { startsAt: true, endsAt: true },
+    }),
+    systemDb.workingHour.findMany({ where: { tenantId: tenant.id, active: true } }),
+  ]);
+  const available = computeSlots({ date: data.date, durationMinutes: service.durationMinutes, hours, busy, rules: tenant.profile, vacations });
   if (!available.includes(data.time)) return { ok: false as const, error: "Ese horario acaba de ocuparse. Elegí otro." };
   const [h = 0, m = 0] = data.time.split(":").map(Number);
   const startsAt = localDate(data.date, h * 60 + m);
   const endsAt = new Date(startsAt.getTime() + (service.durationMinutes + tenant.profile.bufferMinutes) * 60000);
   try {
-    const appointment = await systemDb.$transaction(async (tx) => {
-      const client = await tx.client.upsert({
+    const { appointment, clientToken } = await systemDb.$transaction(async (tx) => {
+      const consent = data.marketingConsent ?? true;
+      let client = await tx.client.upsert({
         where: { tenantId_phone: { tenantId: tenant.id, phone: phone(data.phone) } },
-        update: { name: data.name, email: data.email || null },
-        create: { tenantId: tenant.id, name: data.name, phone: phone(data.phone), email: data.email || null },
+        update: { name: data.name, email: data.email || null, marketingConsent: consent },
+        create: { tenantId: tenant.id, name: data.name, phone: phone(data.phone), email: data.email || null, marketingConsent: consent, accessToken: randomUUID() },
       });
+      // Clientes creados antes del token: asignarles uno para que puedan volver.
+      if (!client.accessToken) client = await tx.client.update({ where: { id: client.id }, data: { accessToken: randomUUID() } });
       const promo = data.promoToken ? await tx.promotion.findFirst({ where: { tenantId: tenant.id, token: data.promoToken, active: true, expiresAt: { gt: new Date() } } }) : null;
-      return tx.appointment.create({ data: {
+      const appointment = await tx.appointment.create({ data: {
         tenantId: tenant.id, serviceId: service.id, clientId: client.id, startsAt, endsAt,
         channel: promo ? "PROMO" : "PUBLIC", promotionId: promo?.id,
         depositRequired: false, depositStatus: "disabled",
       } });
+      return { appointment, clientToken: client.accessToken! };
+    });
+    // Cookie por negocio: al volver, el cliente ve sus turnos sin loguearse.
+    cookies().set(clientCookie(tenant.id), clientToken, {
+      path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax", httpOnly: true,
     });
     if (tenant.plan === "TURNOS_AUTO" && tenant.whatsappRiskAcceptedAt) {
       await systemDb.messageJob.create({ data: {
@@ -106,12 +144,14 @@ export async function bookPublic(input: z.infer<typeof bookingSchema>) {
       } });
     }
     if (data.email && process.env.SMTP_USER && process.env.SMTP_PASS) {
-      const { sendEmail } = await import("@/lib/mailer");
-      await sendEmail({
-        to: data.email,
-        subject: `Turno confirmado en ${tenant.name}`,
-        html: `<h2>¡Tu turno está confirmado!</h2><p>${data.date.split("-").reverse().join("/")} a las ${data.time} — ${service.name}.</p>`,
-      }).catch((error) => console.error("[email] confirmación opcional falló", error));
+      // Fuera del camino crítico: el email es cortesía, la respuesta no lo espera.
+      void import("@/lib/mailer")
+        .then(({ sendEmail }) => sendEmail({
+          to: data.email!,
+          subject: `Turno confirmado en ${tenant.name}`,
+          html: `<h2>¡Tu turno está confirmado!</h2><p>${data.date.split("-").reverse().join("/")} a las ${data.time} — ${service.name}.</p>`,
+        }))
+        .catch((error) => console.error("[email] confirmación opcional falló", error));
     }
     return { ok: true as const, appointmentId: appointment.id };
   } catch (error: any) {
@@ -144,11 +184,78 @@ export async function saveService(input: { id?: string; name: string; emoji: str
   revalidatePath("/app");
 }
 
-export async function saveProfile(input: { name: string; phone?: string; address?: string; instagram?: string; accent: string }) {
+export async function saveProfile(input: { name: string; phone?: string; address?: string; mapsUrl?: string; instagram?: string; accent: string }) {
   const tenant = await getCurrentTenant();
   await db.businessProfile.upsert({ where: { tenantId: tenant.id }, update: input, create: { tenantId: tenant.id, ...input } });
   await db.tenant.update({ where: { id: tenant.id }, data: { name: input.name } });
   revalidatePath("/app");
+}
+
+// Ajustes de reservas: identificador de link, límite de agenda, mostrar
+// precios y vacaciones. El slug se valida (formato + reservados + único).
+export async function saveBookingSettings(input: {
+  slug?: string;
+  showPrices: boolean;
+  bookingHorizonDays: number;
+  cancelWindowHours: number;
+  vacations: Vacation[];
+}): Promise<{ ok: true; slug: string } | { ok: false; error: string }> {
+  const tenant = await getCurrentTenant();
+  const horizon = Math.min(90, Math.max(1, Math.round(input.bookingHorizonDays) || 30));
+  const cancelWindowHours = Math.min(720, Math.max(0, Math.round(input.cancelWindowHours) || 0));
+  const vacations = (input.vacations ?? [])
+    .filter((v) => v.start && v.end && v.start <= v.end)
+    .map((v) => ({ start: v.start, end: v.end, label: v.label?.slice(0, 60) || undefined }));
+
+  let finalSlug = tenant.slug;
+  if (input.slug && input.slug !== tenant.slug) {
+    const slug = input.slug.trim().toLowerCase();
+    if (!isValidSlug(slug)) return { ok: false, error: "El identificador solo puede tener letras, números y guiones (2 a 40), y no puede ser una palabra reservada." };
+    const existe = await systemDb.tenant.findFirst({ where: { slug, NOT: { id: tenant.id } }, select: { id: true } });
+    if (existe) return { ok: false, error: "Ese identificador ya está en uso. Probá otro." };
+    await db.tenant.update({ where: { id: tenant.id }, data: { slug } });
+    finalSlug = slug;
+  }
+
+  await db.businessProfile.update({
+    where: { tenantId: tenant.id },
+    data: { showPrices: input.showPrices, bookingHorizonDays: horizon, cancelWindowHours, vacations: vacations as any },
+  });
+  revalidatePath("/app");
+  revalidatePath(`/${finalSlug}`);
+  return { ok: true, slug: finalSlug };
+}
+
+/**
+ * Cancelación del turno POR EL CLIENTE desde la página pública. Se identifica
+ * por su cookie/token (no hay login). Solo se permite hasta N horas antes,
+ * con N configurable por el negocio (cancelWindowHours).
+ */
+export async function cancelPublicAppointment(slug: string, appointmentId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const tenant = await systemDb.tenant.findUnique({ where: { slug }, include: { profile: true } });
+  if (!tenant?.profile) return { ok: false, error: "El negocio no está disponible." };
+  const token = cookies().get(clientCookie(tenant.id))?.value;
+  if (!token) return { ok: false, error: "No encontramos tu reserva en este dispositivo." };
+  const client = await systemDb.client.findFirst({ where: { tenantId: tenant.id, accessToken: token }, select: { id: true } });
+  if (!client) return { ok: false, error: "No encontramos tu reserva en este dispositivo." };
+  const appt = await systemDb.appointment.findFirst({ where: { id: appointmentId, tenantId: tenant.id, clientId: client.id } });
+  if (!appt) return { ok: false, error: "Ese turno ya no existe." };
+  if (appt.status === "CANCELADO") return { ok: true };
+  const windowH = Math.max(0, tenant.profile.cancelWindowHours ?? 48);
+  const limite = new Date(appt.startsAt.getTime() - windowH * 3_600_000);
+  if (new Date() > limite) return { ok: false, error: `Solo se puede cancelar hasta ${windowH} h antes del turno. Escribinos por WhatsApp para reprogramar.` };
+  await systemDb.appointment.update({ where: { id: appt.id }, data: { status: "CANCELADO" } });
+  revalidatePath(`/${slug}/turnos`);
+  revalidatePath(`/${slug}`);
+  return { ok: true };
+}
+
+/** Sugiere un slug libre a partir de un texto (para el editor de identificador). */
+export async function suggestSlug(text: string): Promise<string> {
+  await getCurrentTenant();
+  return ensureUniqueSlug(text, async (slug) =>
+    !!(await systemDb.tenant.findFirst({ where: { slug }, select: { id: true } }))
+  );
 }
 
 export async function ensureDefaultWorkingHours() {
@@ -160,6 +267,61 @@ export async function saveOnboardingStep(step: "negocio" | "servicio" | "plan") 
   if (tenant.planStatus !== "ONBOARDING") return;
   await db.tenant.update({ where: { id: tenant.id }, data: { onboardingStep: step } });
   revalidatePath("/onboarding");
+}
+
+// Pasos del onboarding consolidados: UNA server action por paso (antes eran
+// tres llamadas encadenadas y "Dale tu identidad" tardaba una eternidad).
+export async function saveOnboardingBusiness(input: { name: string; phone?: string; address?: string; mapsUrl?: string; instagram?: string; accent: string; businessType?: string }) {
+  const tenant = await getCurrentTenant();
+  await Promise.all([
+    db.businessProfile.upsert({ where: { tenantId: tenant.id }, update: input, create: { tenantId: tenant.id, ...input } }),
+    db.tenant.update({
+      where: { id: tenant.id },
+      data: { name: input.name, ...(tenant.planStatus === "ONBOARDING" ? { onboardingStep: "servicio" } : {}) },
+    }),
+    db.workingHour.createMany({ data: [1,2,3,4,5,6].map((weekday) => ({ weekday, startMinutes: 600, endMinutes: weekday === 6 ? 1080 : 1200, active: true })) as any, skipDuplicates: true }),
+  ]);
+  revalidatePath("/onboarding");
+  revalidatePath("/app");
+}
+
+// Crea de una todos los servicios elegidos del rubro. Idempotente por nombre:
+// reintentar el paso (o volver atrás) actualiza en vez de duplicar.
+export async function saveOnboardingServices(services: { name: string; emoji: string; durationMinutes: number; priceCents: number }[]) {
+  const tenant = await getCurrentTenant();
+  if (tenant.planStatus !== "ONBOARDING") await requireFeature("turnos");
+  const limpios = services.filter((s) => s.name.trim() && s.priceCents >= 0);
+  if (!limpios.length) throw new Error("Elegí al menos un servicio.");
+  await Promise.all(limpios.map((s, i) => systemDb.service.upsert({
+    where: { tenantId_name: { tenantId: tenant.id, name: s.name } },
+    update: { ...s, active: true, sortOrder: i },
+    create: { tenantId: tenant.id, ...s, active: true, sortOrder: i },
+  })));
+  if (tenant.planStatus === "ONBOARDING") {
+    await db.tenant.update({ where: { id: tenant.id }, data: { onboardingStep: "plan" } });
+  }
+  revalidatePath("/onboarding");
+  revalidatePath("/app");
+}
+
+export async function saveOnboardingService(input: { id?: string; name: string; emoji: string; durationMinutes: number; priceCents: number }) {
+  const tenant = await getCurrentTenant();
+  if (tenant.planStatus !== "ONBOARDING") await requireFeature("turnos");
+  await Promise.all([
+    input.id
+      ? db.service.update({ where: { id: input.id }, data: input })
+      : systemDb.service.upsert({
+          // Idempotente: reintentar el paso actualiza el mismo servicio.
+          where: { tenantId_name: { tenantId: tenant.id, name: input.name } },
+          update: { ...input, active: true },
+          create: { tenantId: tenant.id, ...input, active: true },
+        }),
+    tenant.planStatus === "ONBOARDING"
+      ? db.tenant.update({ where: { id: tenant.id }, data: { onboardingStep: "plan" } })
+      : Promise.resolve(),
+  ]);
+  revalidatePath("/onboarding");
+  revalidatePath("/app");
 }
 
 export async function createPromotion(input: { serviceId?: string; name: string; addOnLabel: string; message: string; expiresAt: Date }) {
@@ -182,19 +344,26 @@ export async function acceptWhatsappRisk() {
   revalidatePath("/app");
 }
 
-export async function queueGapFill(startLabel: string, endLabel: string) {
+export async function queueGapFill(startLabel: string, endLabel: string, promoToken?: string) {
   await requireFeature("whatsapp_auto");
   const tenant = await getCurrentTenant();
   if (!tenant.whatsappRiskAcceptedAt) throw new Error("Aceptá primero el riesgo de la integración.");
-  const clients = await db.client.findMany({ where: { marketingConsent: true }, include: { appointments: { where: { status: "ASISTIO" }, orderBy: { startsAt: "desc" }, take: 1 } } });
+  const [clients, promo] = await Promise.all([
+    db.client.findMany({ where: { marketingConsent: true }, include: { appointments: { where: { status: "ASISTIO" }, orderBy: { startsAt: "desc" }, take: 1 } } }),
+    // La promo la elige el dueño en el sheet (o ninguna): el link la referencia.
+    promoToken ? db.promotion.findFirst({ where: { token: promoToken, active: true, expiresAt: { gt: new Date() } } }) : null,
+  ]);
   const due = clients.filter((client) => {
     const last = client.appointments[0]?.startsAt;
     return last && client.expectedCycleDays && Date.now() - last.getTime() >= client.expectedCycleDays * 86400000;
   }).slice(0, 5);
+  const base = `${appUrl()}/${tenant.slug}/turnos`;
+  const link = promo ? `${base}?promo=${promo.token}` : base;
   const batch = new Date().toISOString().slice(0, 13);
   for (const client of due) await db.messageJob.upsert({
     where: { idempotencyKey: `gap:${tenant.id}:${batch}:${client.id}` }, update: {},
-    create: { kind: "HUECO", phone: client.phone, scheduledAt: new Date(), idempotencyKey: `gap:${tenant.id}:${batch}:${client.id}`, body: `Hola ${client.name.split(" ")[0]} 👋 Se liberó un lugar de ${startLabel} a ${endLabel} en ${tenant.name}. ¿Te viene bien?` } as any,
+    create: { kind: "HUECO", phone: client.phone, scheduledAt: new Date(), idempotencyKey: `gap:${tenant.id}:${batch}:${client.id}`,
+      body: `Hola ${client.name.split(" ")[0]} 👋 Se liberó un lugar de ${startLabel} a ${endLabel} en ${tenant.name}.${promo ? ` Además tenés esta promo: ${promo.name}.` : ""} Reservá tu lugar acá: ${link}` } as any,
   });
   return due.length;
 }

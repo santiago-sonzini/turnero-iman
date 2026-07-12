@@ -1,18 +1,18 @@
-import { getCurrentTenant } from "@/server/tenant-context";
+import { requireTenant } from "@/server/require-tenant";
 import { OnboardingFlow } from "@/components/turnos/onboarding-flow";
-import { db } from "@/server/db";
+import { onboardingInitialData } from "@/server/queries";
+import { DEMO_MODE } from "@/server/db";
+import { mpConfigurado } from "@/server/mp/preapproval";
 import { redirect } from "next/navigation";
 
 export default async function Onboarding(){
-  const tenant=await getCurrentTenant();
+  const tenant=await requireTenant();
   if(tenant.planStatus!=="ONBOARDING") redirect("/app");
-  const [profile,service]=await Promise.all([
-    db.businessProfile.findFirst(),
-    db.service.findFirst({orderBy:{createdAt:"asc"}}),
-  ]);
+  const [profile,services]=await onboardingInitialData();
   return <OnboardingFlow initial={{
     step:tenant.onboardingStep,
-    business:{name:profile?.name??tenant.name,phone:profile?.phone??"",address:profile?.address??"",instagram:profile?.instagram??"",accent:profile?.accent??"#E94F37"},
-    service:service?{id:service.id,name:service.name,emoji:service.emoji,durationMinutes:service.durationMinutes,priceCents:service.priceCents}:{name:"Corte clásico",emoji:"✂️",durationMinutes:40,priceCents:900000},
+    mp:mpConfigurado()&&!DEMO_MODE,
+    business:{name:profile?.name??tenant.name,phone:profile?.phone??"",address:profile?.address??"",mapsUrl:(profile as any)?.mapsUrl??"",instagram:profile?.instagram??"",accent:profile?.accent??"#E94F37",businessType:(profile as any)?.businessType??"barberia"},
+    services:services.map((s)=>({name:s.name,emoji:s.emoji,durationMinutes:s.durationMinutes,priceCents:s.priceCents})),
   }}/>;
 }

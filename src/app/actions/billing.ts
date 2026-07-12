@@ -2,14 +2,15 @@
 // Ciclo de vida de la suscripción del tenant (Mercado Pago preapproval).
 // La verdad del estado la escriben los webhooks (src/server/mp/webhook.ts);
 // acá solo se crea/cambia/cancela y se refleja lo verificado contra la API.
-import { db, DEMO_MODE } from "@/server/db";
+import { db, systemDb, DEMO_MODE } from "@/server/db";
 import { getCurrentTenant } from "@/server/tenant-context";
-import { DIAS_TRIAL, PLANES, accesoDe, formatoArs } from "@/server/plans";
+import { DIAS_TRIAL, PLANES, formatoArs } from "@/server/plans";
 import {
   actualizarMonto,
   cancelarSuscripcionMp,
-  crearSuscripcion,
+  crearPlanCompartido,
   mpConfigurado,
+  obtenerPlan,
   obtenerSuscripcion,
 } from "@/server/mp/preapproval";
 import { sincronizarPreapproval } from "@/server/mp/webhook";
@@ -32,93 +33,123 @@ export async function elegirPlan(
   opciones?: { conPago?: boolean }
 ): Promise<ResultadoPlan> {
   const tenant = await getCurrentTenant();
-  const plan = PLANES[tier];
   const ahora = new Date();
   const finTrial =
     tenant.trialEndsAt && tenant.trialEndsAt > ahora
       ? tenant.trialEndsAt
       : new Date(ahora.getTime() + DIAS_TRIAL * 86_400_000);
 
+  // "Con pago" real: hay que dejar el débito autorizado en MP. En ese caso NO
+  // habilitamos el acceso todavía: el tenant sigue en ONBOARDING hasta que MP
+  // confirme la autorización (webhook o retorno → sincronizarPreapproval lo
+  // pasa a TRIALING). Sin pago (MP sin configurar / demo) el trial arranca ya.
+  const conPago = !!opciones?.conPago && mpConfigurado() && !DEMO_MODE;
+
   await db.tenant.update({
     where: { id: tenant.id },
     data: {
       plan: tier,
-      planStatus:
-        tenant.planStatus === "ONBOARDING" || tenant.planStatus === "TRIALING"
-          ? "TRIALING"
-          : tenant.planStatus,
       trialEndsAt: finTrial,
-      onboardingStep: "listo",
+      // El acceso solo se abre por la vía sin pago; la vía con pago espera a MP.
+      ...(conPago
+        ? {}
+        : {
+            planStatus:
+              tenant.planStatus === "ONBOARDING" || tenant.planStatus === "TRIALING"
+                ? "TRIALING"
+                : tenant.planStatus,
+            onboardingStep: "listo",
+          }),
     },
   });
   await track("plan_seleccionado", { plan: tier });
 
-  if (!opciones?.conPago || !mpConfigurado() || DEMO_MODE) {
+  if (!conPago) {
     return { ok: true, initPoint: null };
   }
 
-  return crearPreapprovalParaTenant(tier, finTrial);
+  return suscribirTenant(tier);
 }
 
-/** Crea (o recupera) la preapproval y devuelve el init_point de MP. */
+/** Recupera (o crea la primera vez) el init_point de la suscripción del tenant. */
 export async function activarPago(): Promise<ResultadoPlan> {
   const tenant = await getCurrentTenant();
   if (!tenant.plan) return { ok: false, error: "Elegí un plan primero." };
   if (!mpConfigurado())
     return { ok: false, error: "Mercado Pago no está configurado todavía." };
 
-  // Ya hay una suscripción: devolvemos su init_point (sirve para reintentar
-  // el pago o volver a autorizar).
+  // Ya autorizó una suscripción: devolvemos su init_point (para gestionarla).
   if (tenant.mpPreapprovalId) {
     try {
       const pre = await obtenerSuscripcion(tenant.mpPreapprovalId);
-      if (pre.status !== "cancelled")
-        return { ok: true, initPoint: pre.init_point };
+      if (pre.status !== "cancelled") return { ok: true, initPoint: pre.init_point };
     } catch (e) {
       console.error("[mp] no se pudo recuperar la preapproval", e);
     }
   }
 
-  const ahora = new Date();
-  const finTrial =
-    tenant.trialEndsAt && tenant.trialEndsAt > ahora
-      ? tenant.trialEndsAt
-      : new Date(ahora.getTime() + 10 * 60_000); // sin trial: primer débito ya
-  return crearPreapprovalParaTenant(tenant.plan, finTrial);
+  return suscribirTenant(tenant.plan);
 }
 
-async function crearPreapprovalParaTenant(
-  tier: PlanTier,
-  primerDebito: Date
-): Promise<ResultadoPlan> {
+/**
+ * Plan COMPARTIDO del tier: se crea una sola plantilla por plan y se cachea en
+ * la tabla MpPlan; todos los tenants suscriben sobre la misma (antes se creaba
+ * un plan por cliente). Devuelve su init_point.
+ */
+async function planCompartidoInitPoint(tier: PlanTier): Promise<string> {
+  const plan = PLANES[tier];
+  const guardado = await systemDb.mpPlan.findUnique({ where: { tier } });
+  if (guardado && guardado.amountArs === plan.precioArs) {
+    try {
+      const mp = await obtenerPlan(guardado.mpPlanId);
+      if (mp.status !== "cancelled") return mp.init_point;
+    } catch (e) {
+      console.error("[mp] plan compartido guardado no recuperable; se recrea", e);
+    }
+  }
+  const nuevo = await crearPlanCompartido({
+    razon: `Imán — Plan ${plan.nombre} (${formatoArs(plan.precioArs!)}/mes)`,
+    montoArs: plan.precioArs!,
+    trialDias: DIAS_TRIAL,
+  });
+  // Reemplaza cualquier registro previo del tier (p. ej. si cambió el precio).
+  await systemDb.mpPlan.deleteMany({ where: { tier } });
+  await systemDb.mpPlan.create({ data: { tier, mpPlanId: nuevo.id, amountArs: plan.precioArs! } });
+  return nuevo.init_point;
+}
+
+/**
+ * Manda al tenant a suscribirse sobre el plan COMPARTIDO de su tier. El mapeo
+ * suscripción↔tenant se resuelve con external_reference=tenantId en el
+ * init_point (primario) y el email del pagador (fallback) — no con un plan por
+ * cliente. El acceso se habilita recién cuando MP confirma la autorización.
+ */
+async function suscribirTenant(tier: PlanTier): Promise<ResultadoPlan> {
   const tenant = await getCurrentTenant();
   const plan = PLANES[tier];
   if (!plan.precioArs) return { ok: false, error: "Plan sin precio online." };
 
-  const usuario = await getUserServer();
-  const email = tenant.mpPayerEmail ?? usuario?.user.email;
-  if (!email) return { ok: false, error: "No hay email para facturar." };
-
   try {
-    const pre = await crearSuscripcion({
-      tenantId: tenant.id,
-      payerEmail: email,
-      razon: `Imán — Plan ${plan.nombre} (${formatoArs(plan.precioArs)}/mes)`,
-      montoArs: plan.precioArs,
-      inicio: primerDebito,
-    });
-    await db.tenant.update({
-      where: { id: tenant.id },
-      data: { mpPreapprovalId: pre.id, mpPayerEmail: email },
-    });
-    await track("suscripcion_iniciada", { plan: tier, preapproval: pre.id });
-    return { ok: true, initPoint: pre.init_point };
+    const initPoint = await planCompartidoInitPoint(tier);
+    // Guardamos el email del dueño como fallback de mapeo (por si MP no propaga
+    // el external_reference al preapproval creado desde el checkout del plan).
+    const email = tenant.mpPayerEmail ?? (await getUserServer())?.user.email ?? null;
+    if (email && email !== tenant.mpPayerEmail) {
+      await db.tenant.update({ where: { id: tenant.id }, data: { mpPayerEmail: email } });
+    }
+    await track("suscripcion_iniciada", { plan: tier });
+    const sep = initPoint.includes("?") ? "&" : "?";
+    return { ok: true, initPoint: `${initPoint}${sep}external_reference=${encodeURIComponent(tenant.id)}` };
   } catch (e: any) {
-    console.error("[mp] error creando preapproval", e);
-    return {
-      ok: false,
-      error: "No pudimos iniciar la suscripción en Mercado Pago. Probá de nuevo.",
-    };
+    console.error("[mp] error iniciando suscripción", e);
+    const cuerpo = String(e?.body ?? e?.message ?? "");
+    if (cuerpo.includes("back_url")) {
+      return { ok: false, error: "Falta la URL pública (NEXT_PUBLIC_APP_URL https) para el checkout de Mercado Pago." };
+    }
+    if (/\b5\d\d\b/.test(cuerpo) || cuerpo.includes("Internal server error")) {
+      return { ok: false, error: "Mercado Pago tuvo un error interno. Probá de nuevo en un momento." };
+    }
+    return { ok: false, error: "No pudimos iniciar la suscripción en Mercado Pago. Probá de nuevo." };
   }
 }
 
@@ -177,11 +208,16 @@ export async function cancelarSuscripcion(): Promise<ResultadoPlan> {
 export async function confirmarRetorno(preapprovalId: string): Promise<boolean> {
   const tenant = await getCurrentTenant();
   const pre = await obtenerSuscripcion(preapprovalId);
-  // Solo aceptamos preapprovals que referencian a ESTE tenant.
-  if (pre.external_reference !== tenant.id) {
+  // Mapeo a ESTE tenant: por external_reference (lo mandamos en el init_point
+  // del plan compartido) o, como fallback, por el email del pagador.
+  const esDeTenant = pre.external_reference === tenant.id
+    || (!!pre.payer_email && pre.payer_email === tenant.mpPayerEmail);
+  if (!esDeTenant) {
     console.warn("[mp] retorno con preapproval ajena", preapprovalId, tenant.id);
     return false;
   }
   await sincronizarPreapproval(pre);
-  return true;
+  // Éxito real = MP autorizó el débito. Si sigue "pending" el acceso NO se
+  // habilita hasta que el webhook confirme (la página lo aclara al usuario).
+  return pre.status === "authorized";
 }

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { env } from '@/env'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { getUser } from "@/app/actions/users";
+import { getUser } from "@/server/users";
 import { User as UserDB } from "@prisma/client";
 import { User } from "@supabase/supabase-js";
 

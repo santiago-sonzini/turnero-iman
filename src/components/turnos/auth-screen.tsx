@@ -45,7 +45,7 @@ export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
           <h1>{mode === "signup" ? "Mañana, tus clientes reservan solos." : "Qué bueno verte de nuevo."}</h1>
           <p className="auth-lead">Turnos online, clientes que vuelven y cada hueco convertido en una oportunidad.</p>
           <ul className="auth-benefits">
-            <li><Check /> 7 días gratis, sin tarjeta</li>
+            <li><Check /> 7 días gratis, sin cargos hoy</li>
             <li><Check /> Configuración en menos de 3 minutos</li>
             <li><Check /> Tu página con tu marca y tu color</li>
           </ul>
@@ -70,9 +70,9 @@ export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
             <p>{mode === "signup" ? "Nombre, email y clave. Después te guiamos." : "Usá el email con el que creaste tu cuenta."}</p>
           </header>
           <form action={submit}>
-            {mode === "signup" && <label className="auth-field"><span>Nombre de tu negocio</span><div><Store /><input name="negocio" required minLength={2} autoComplete="organization" placeholder="Ej: Barbería El Roble" /></div></label>}
-            <label className="auth-field"><span>Email</span><div><Mail /><input name="email" required type="email" autoComplete="email" placeholder="vos@tubarberia.com" /></div></label>
-            <label className="auth-field"><span>Clave</span><div><LockKeyhole /><input name="password" required minLength={8} type={showPassword ? "text" : "password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} placeholder="Mínimo 8 caracteres" /><button type="button" aria-label={showPassword ? "Ocultar clave" : "Mostrar clave"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</button></div></label>
+            {mode === "signup" && <label className="auth-field" htmlFor="negocio"><span>Nombre de tu negocio</span><div><Store /><input id="negocio" name="negocio" required minLength={2} autoComplete="organization" placeholder="Ej: Barbería El Roble" /></div></label>}
+            <label className="auth-field" htmlFor="email"><span>Email</span><div><Mail /><input id="email" name="email" required type="email" autoComplete="username" placeholder="vos@tubarberia.com" /></div></label>
+            <label className="auth-field" htmlFor="password"><span>Clave</span><div><LockKeyhole /><input id="password" name="password" required minLength={8} type={showPassword ? "text" : "password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} placeholder="Mínimo 8 caracteres" /><button type="button" tabIndex={-1} aria-label={showPassword ? "Ocultar clave" : "Mostrar clave"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</button></div></label>
             {error && <p className="auth-message error">{error}</p>}
             {notice && <p className="auth-message success">{notice}</p>}
             <button className="auth-submit" disabled={pending}>{pending ? <><span className="auth-spinner" /> Un segundo…</> : mode === "signup" ? <>Crear mi cuenta <Scissors /></> : "Entrar a Imán"}</button>

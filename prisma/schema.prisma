@@ -12,6 +12,17 @@ datasource db {
 enum Role {
   ADMIN
 }
+
+// Plan de suscripción de MP COMPARTIDO por tier (plantilla creada una sola vez;
+// todos los tenants suscriben sobre el mismo). Antes se creaba un plan por
+// tenant, lo cual ensuciaba la cuenta de MP y era conceptualmente al revés.
+model MpPlan {
+  mpPlanId String @id
+  tier PlanTier @unique
+  amountArs Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 enum PlanTier {
   TURNOS
   TURNOS_AUTO
@@ -71,6 +82,7 @@ model Tenant {
   trialEndsAt DateTime?
   graceUntil DateTime?
   mpPreapprovalId String? @unique
+  mpPreapprovalPlanId String? @unique
   mpPayerEmail String?
   mpLastPaymentAt DateTime?
   addons String[] @default([])
@@ -110,7 +122,9 @@ model BusinessProfile {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name String
   description String?
+  businessType String?
   address String?
+  mapsUrl String?
   phone String?
   instagram String?
   timezone String @default("America/Argentina/Buenos_Aires")
@@ -120,6 +134,9 @@ model BusinessProfile {
   slotStepMinutes Int @default(15)
   bufferMinutes Int @default(0)
   depositsEnabled Boolean @default(false)
+  showPrices Boolean @default(true)
+  vacations Json?
+  cancelWindowHours Int @default(48)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -165,6 +182,7 @@ model Client {
   notes String?
   expectedCycleDays Int?
   marketingConsent Boolean @default(false)
+  accessToken String? @unique
   appointments Appointment[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
