@@ -13,11 +13,46 @@ export function tenantRouteMeta(tenantId: string) {
   return systemDb.tenant.findUnique({ where: { id: tenantId }, select: { slug: true, planStatus: true } });
 }
 
-/** Datos mínimos para metadata de la página pública, nunca datos de billing. */
+/** Datos mínimos para metadata + JSON-LD de la página pública, nunca billing. */
 export function publicBusinessMeta(slug: string) {
   return systemDb.tenant.findUnique({
     where: { slug },
-    select: { slug: true, name: true, planStatus: true, profile: { select: { name: true, description: true } } },
+    select: {
+      slug: true,
+      name: true,
+      planStatus: true,
+      profile: {
+        select: {
+          name: true,
+          description: true,
+          businessType: true,
+          address: true,
+          phone: true,
+          instagram: true,
+          mapsUrl: true,
+          logoUrl: true,
+          accent: true,
+          timezone: true,
+          showPrices: true,
+        },
+      },
+      services: {
+        where: { active: true },
+        select: { name: true, priceCents: true, durationMinutes: true, emoji: true },
+        orderBy: { sortOrder: "asc" },
+        take: 30,
+      },
+    },
+  });
+}
+
+/** Slugs de negocios públicos y visibles (para el sitemap). */
+export function activePublicBusinessSlugs() {
+  return systemDb.tenant.findMany({
+    where: { planStatus: { notIn: ["ONBOARDING"] }, profile: { isNot: null } },
+    select: { slug: true, updatedAt: true },
+    orderBy: { updatedAt: "desc" },
+    take: 5000,
   });
 }
 

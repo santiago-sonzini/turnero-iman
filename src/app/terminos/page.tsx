@@ -35,7 +35,7 @@ export default function TermsPage() {
     <p>El software, la marca y el diseño de Imán Turnos son nuestros o de nuestros licenciantes. Te damos una licencia limitada, no exclusiva e intransferible para usar el servicio mientras tu cuenta esté activa. Tus datos y los de tus clientes siguen siendo tuyos.</p>
 
     <h2>8. Disponibilidad y responsabilidad</h2>
-    <p>Trabajamos para que el servicio esté disponible y seguro, pero se presta "tal cual" y no garantizamos que funcione sin interrupciones ni errores. En la medida permitida por la ley, no somos responsables por daños indirectos ni por lucro cesante, y nuestra responsabilidad total se limita a lo que hayas pagado por el servicio en los últimos meses. Nada de esto limita derechos que la ley reconoce como irrenunciables.</p>
+    <p>Trabajamos para que el servicio esté disponible y seguro, pero se presta «tal cual» y no garantizamos que funcione sin interrupciones ni errores. En la medida permitida por la ley, no somos responsables por daños indirectos ni por lucro cesante, y nuestra responsabilidad total se limita a lo que hayas pagado por el servicio en los últimos meses. Nada de esto limita derechos que la ley reconoce como irrenunciables.</p>
 
     <h2>9. Suspensión y baja</h2>
     <p>Podés dar de baja tu cuenta cuando quieras. Podemos suspender o cerrar cuentas que incumplan estos términos, que representen un riesgo de seguridad o fraude, o cuando la ley lo requiera, dándote aviso cuando sea posible.</p>

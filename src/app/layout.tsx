@@ -4,18 +4,50 @@ import "@/styles/globals.css";
 import "@/styles/month.css";
 import "@/styles/auth.css";
 import "@/styles/landing.css";
+import "@/styles/blog.css";
 
 import { type Metadata } from "next";
 import NextTopLoader from 'nextjs-toploader';
 import { Analytics } from "@vercel/analytics/next";
 import { env } from "@/env";
+import { SITE } from "@/lib/seo";
 
 export const metadata: Metadata = {
   metadataBase: new URL(env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
-  applicationName: "Imán Turnos",
-  title: { default: "Imán Turnos | Tu agenda, sin huecos", template: "%s | Imán Turnos" },
-  description: "Turnos online, clientes recurrentes y promos para comercios de servicios.",
-  openGraph: { title: "Imán Turnos", description: "Tu agenda, sin huecos.", type: "website", locale: "es_AR" },
+  applicationName: SITE.name,
+  title: { default: `${SITE.name} | ${SITE.tagline}`, template: `%s | ${SITE.name}` },
+  description: SITE.description,
+  keywords: [...SITE.keywords],
+  authors: [{ name: SITE.name, url: SITE.url }],
+  creator: SITE.name,
+  publisher: SITE.name,
+  category: "business software",
+  alternates: { canonical: "/" },
+  formatDetection: { telephone: false, email: false, address: false },
+  openGraph: {
+    title: `${SITE.name} — ${SITE.tagline}`,
+    description: SITE.description,
+    type: "website",
+    locale: SITE.locale,
+    url: SITE.url,
+    siteName: SITE.name,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${SITE.name} — ${SITE.tagline}`,
+    description: SITE.description,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
 };
 
 export default function RootLayout({

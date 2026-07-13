@@ -1,0 +1,72 @@
+/* Blog: reutiliza .docs-page (ancho, animación) y los tokens globales
+   (--acento, --tinta, --tinta-suave, --papel). Estilo prensa: legible y sobrio. */
+
+.blog-index h1,
+.blog-article h1 { letter-spacing: -0.02em; }
+
+/* Lista de notas (index y relacionadas) */
+.blog-list { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 14px; }
+.blog-card {
+  display: flex; gap: 16px; padding: 18px; border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--tinta) 12%, transparent);
+  background: color-mix(in srgb, var(--papel, #fff) 60%, transparent);
+  text-decoration: none; color: inherit;
+  transition: transform 0.18s var(--resorte, ease), border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.blog-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--acento) 45%, transparent);
+  box-shadow: 0 10px 30px -18px color-mix(in srgb, var(--acento) 60%, transparent);
+}
+/* Anula el subrayado global de `.docs-page a` en las tarjetas (no en la prosa). */
+.docs-page a.blog-card, .docs-page a.blog-card:hover { text-decoration: none; color: inherit; font-weight: inherit; }
+.blog-card-emoji { font-size: 2rem; line-height: 1; flex: none; }
+.blog-card-body { display: flex; flex-direction: column; gap: 6px; }
+.blog-card-body h2, .blog-card-body h3 { font-size: 1.08rem; margin: 0; line-height: 1.25; }
+.blog-card-body p { color: var(--tinta-suave); font-size: 0.9rem; line-height: 1.5; font-weight: 600; margin: 0; }
+.blog-card-body small { color: var(--tinta-suave); font-size: 0.78rem; font-weight: 700; }
+
+.blog-card-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.blog-card-tags span {
+  font-size: 0.68rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 999px;
+  color: color-mix(in srgb, var(--acento) 82%, var(--tinta));
+  background: color-mix(in srgb, var(--acento) 12%, transparent);
+}
+
+/* Artículo */
+.blog-article-head { margin-bottom: 10px; }
+.blog-article-head .blog-card-tags { margin-bottom: 12px; }
+.blog-meta { display: block; color: var(--tinta-suave); font-weight: 700; font-size: 0.82rem; margin-top: 6px; }
+
+.blog-prose { margin-top: 22px; }
+.blog-prose h2 { font-size: 1.35rem; margin: 34px 0 10px; line-height: 1.2; letter-spacing: -0.01em; }
+.blog-prose h3 { font-size: 1.08rem; margin: 22px 0 6px; }
+.blog-prose p { color: var(--tinta); font-weight: 500; font-size: 1rem; line-height: 1.7; margin: 0 0 16px; }
+.blog-prose strong { font-weight: 800; }
+.blog-prose a { color: var(--acento); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.blog-prose ul, .blog-prose ol { margin: 0 0 18px; padding-left: 22px; color: var(--tinta); }
+.blog-prose li { font-size: 1rem; line-height: 1.6; font-weight: 500; margin-bottom: 8px; }
+.blog-prose li::marker { color: var(--acento); font-weight: 800; }
+
+/* FAQ + relacionadas */
+.blog-faq { margin-top: 40px; border-top: 1px solid color-mix(in srgb, var(--tinta) 12%, transparent); padding-top: 24px; }
+.blog-faq h2, .blog-related h2 { font-size: 1.25rem; margin: 0 0 12px; }
+.blog-faq details { border-bottom: 1px solid color-mix(in srgb, var(--tinta) 10%, transparent); padding: 12px 0; }
+.blog-faq summary { cursor: pointer; font-weight: 800; font-size: 0.98rem; list-style: none; }
+.blog-faq summary::-webkit-details-marker { display: none; }
+.blog-faq summary::before { content: "＋"; color: var(--acento); font-weight: 900; margin-right: 8px; }
+.blog-faq details[open] summary::before { content: "－"; }
+.blog-faq p { color: var(--tinta-suave); font-weight: 600; font-size: 0.95rem; line-height: 1.6; margin: 10px 0 0; }
+
+.blog-related { margin-top: 40px; }
+
+/* CTA */
+.blog-cta {
+  margin-top: 40px; padding: 26px; border-radius: 18px; text-align: center;
+  background: color-mix(in srgb, var(--acento) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--acento) 28%, transparent);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.blog-cta b { font-size: 1.15rem; }
+.blog-cta p { color: var(--tinta-suave); font-weight: 600; font-size: 0.92rem; margin: 0 0 8px; max-width: 34ch; }
