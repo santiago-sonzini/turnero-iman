@@ -7,6 +7,7 @@ import "@/styles/landing.css";
 
 import { type Metadata } from "next";
 import NextTopLoader from 'nextjs-toploader';
+import { Analytics } from "@vercel/analytics/next";
 import { env } from "@/env";
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ export default function RootLayout({
           <Toaster />
           {children}
         </Providers>
+        <Analytics />
       </body>
     </html>
   );
