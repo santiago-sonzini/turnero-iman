@@ -1,5 +1,6 @@
 // Helpers de gating para páginas y actions. Lanzan/redirigen según el plan y
 // el estado de suscripción del tenant de la sesión.
+import { redirect } from "next/navigation";
 import { getCurrentTenant } from "./tenant-context";
 import { accesoDe, tieneFeature, type Acceso, type FeatureKey } from "./plans";
 
@@ -16,15 +17,13 @@ export async function featureHabilitada(f: FeatureKey): Promise<boolean> {
 /** Para usar al tope de un server action de una feature paga. */
 export async function requireFeature(f: FeatureKey): Promise<void> {
   const tenant = await getCurrentTenant();
+  const acceso = accesoDe(tenant);
+  if (acceso.estado === "bloqueado") {
+    redirect("/suscripcion?aviso=inactiva");
+  }
   if (!tieneFeature(tenant, f)) {
     throw new Error(
       "Esta función no está incluida en tu plan. Podés cambiarlo en Ajustes → Suscripción."
-    );
-  }
-  const acceso = accesoDe(tenant);
-  if (acceso.estado === "bloqueado") {
-    throw new Error(
-      "Tu suscripción no está activa. Reactivala en Ajustes → Suscripción (tus datos siguen guardados)."
     );
   }
 }

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { env } from "@/env";
 import { normalizePhone } from "@/lib/phone";
 import { systemDb } from "@/server/db";
+import { logError } from "@/server/observability/log";
 
 function authorized(req: NextRequest) {
   return !!env.WA_SERVER_TOKEN && req.headers.get("authorization") === `Bearer ${env.WA_SERVER_TOKEN}`;
@@ -132,6 +133,7 @@ export async function PATCH(req: NextRequest) {
         processingStartedAt: null,
         nextAttemptAt: exhausted ? null : new Date(Date.now() + Math.min(3_600_000, 30_000 * 2 ** job.attempts)),
       } });
+      if (exhausted) await logError("wa_worker", new Error(body.error ?? "send failed"), { jobId: job.id }, body.tenantId);
     }
   }
   if (body.health) {
@@ -150,6 +152,9 @@ export async function PATCH(req: NextRequest) {
         lastError: body.lastError ?? null,
       },
     });
+    if (["BANNED", "DEGRADED"].includes(body.health)) {
+      await logError("wa_worker", new Error(body.lastError ?? body.health), { health: body.health }, body.tenantId);
+    }
   }
   return NextResponse.json({ ok: true });
 }

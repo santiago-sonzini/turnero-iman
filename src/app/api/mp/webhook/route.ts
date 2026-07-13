@@ -10,6 +10,7 @@ import { z } from "zod";
 import { env } from "@/env";
 import { procesarNotificacion, verificarFirma } from "@/server/mp/webhook";
 import { systemDb } from "@/server/db";
+import { logError } from "@/server/observability/log";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest) {
   const secreto = env.MP_WEBHOOK_SECRET;
   if (!secreto) {
     console.error("[mp] webhook recibido sin MP_WEBHOOK_SECRET configurado");
+    await logError("mp_webhook", new Error("MP_WEBHOOK_SECRET no configurado"));
     return NextResponse.json({ error: "no configurado" }, { status: 500 });
   }
 
@@ -81,6 +83,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     // Respondemos 500 para que MP reintente (cada 15 min).
     console.error("[mp] error procesando webhook", tipo, dataId, e);
+    await logError("mp_webhook", e, { tipo, dataId });
     return NextResponse.json({ error: "error interno" }, { status: 500 });
   }
 

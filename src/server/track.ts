@@ -1,6 +1,7 @@
 // Eventos del funnel de onboarding/suscripción (medibles con SQL sobre
 // FunnelEvent). Nunca rompe el flujo que lo llama.
 import { db, systemDb } from "./db";
+import { logError } from "./observability/log";
 
 export type EventoFunnel =
   | "cuenta_creada"
@@ -24,6 +25,7 @@ export async function track(
     } as any);
   } catch (e) {
     console.error("[track]", event, e);
+    await logError("track", e, { event });
   }
 }
 
@@ -39,5 +41,6 @@ export async function trackFor(
     });
   } catch (e) {
     console.error("[track]", event, e);
+    await logError("track", e, { event }, tenantId);
   }
 }

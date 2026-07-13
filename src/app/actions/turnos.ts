@@ -22,6 +22,7 @@ import {
   setPublicAppointmentCookie,
 } from "@/server/public-booking-access";
 import { consumeRateLimit, requestFingerprint } from "@/server/rate-limit";
+import { logError } from "@/server/observability/log";
 import { z } from "zod";
 
 const horizonOf = (profile: { bookingHorizonDays: number }) => Math.min(90, Math.max(1, profile.bookingHorizonDays || 30));
@@ -63,7 +64,7 @@ function ofrecenServicio<T extends { services: { serviceId: string }[] }>(staff:
 // cliente si dejó su email; aviso al dueño si activó las notificaciones —
 // independiente de si el cliente cargó o no su email.
 async function enviarEmailsReserva(a: {
-  tenant: { name: string; slug: string };
+  tenant: { id: string; name: string; slug: string };
   profile: { accent?: string; address?: string | null; mapsUrl?: string | null; notifyOnBooking?: boolean; notifyEmail?: string | null } | null;
   service: { name: string };
   clienteNombre: string; clienteEmail: string | null; telefono: string; date: string; time: string;
@@ -85,17 +86,18 @@ async function enviarEmailsReserva(a: {
         fecha, hora: a.time, direccion: a.profile?.address ?? null, mapsUrl: a.profile?.mapsUrl ?? null,
         profesional: a.profesional, accent, url,
       });
-      await sendEmail({ to: a.clienteEmail, subject, html }).catch((e) => console.error("[email] confirmación cliente falló", e));
+      await sendEmail({ to: a.clienteEmail, subject, html, tenantId: a.tenant.id, template: "confirmacion_cliente" }).catch((e) => console.error("[email] confirmación cliente falló", e));
     }
     if (a.profile?.notifyOnBooking && a.profile?.notifyEmail) {
       const { subject, html } = emailAvisoTurnoAdmin({
         negocio: a.tenant.name, cliente: a.clienteNombre, telefono: a.telefono,
         servicio: a.service.name, fecha, hora: a.time, profesional: a.profesional, accent, panelUrl: `${base}/app`,
       });
-      await sendEmail({ to: a.profile.notifyEmail, subject, html }).catch((e) => console.error("[email] aviso dueño falló", e));
+      await sendEmail({ to: a.profile.notifyEmail, subject, html, tenantId: a.tenant.id, template: "aviso_turno_admin" }).catch((e) => console.error("[email] aviso dueño falló", e));
     }
   } catch (e) {
     console.error("[email] reserva", e);
+    await logError("email", e, { flow: "reserva" }, a.tenant.id);
   }
 }
 
@@ -418,6 +420,7 @@ export async function bookPublic(input: z.infer<typeof bookingSchema>) {
   } catch (error: any) {
     if (error?.code === "P2004" || String(error?.message).includes("appointment_no_overlap")) return { ok: false as const, error: "Ese horario acaba de ocuparse. Elegí otro." };
     console.error("[booking]", error);
+    await logError("booking", error, undefined, tenant.id);
     return { ok: false as const, error: "No pudimos guardar el turno. Probá otra vez." };
   }
 }
@@ -533,6 +536,7 @@ export async function crearTurnoManual(input: z.infer<typeof manualBookingSchema
   } catch (error: any) {
     if (error?.code === "P2004" || String(error?.message).includes("appointment_no_overlap")) return { ok: false as const, error: "Ese horario acaba de ocuparse. Elegí otro." };
     console.error("[manual booking]", error);
+    await logError("manual_booking", error, undefined, tenant.id);
     return { ok: false as const, error: "No pudimos crear el turno. Probá de nuevo." };
   }
 }
@@ -880,7 +884,10 @@ export async function acceptWhatsappRisk() {
       method: "POST", headers: { Authorization: `Bearer ${process.env.WA_SERVER_TOKEN}`, "Content-Type": "application/json" },
       body: JSON.stringify({ tenantId: tenant.id }),
       signal: AbortSignal.timeout(8_000),
-    }).catch((error) => console.error("[whatsapp] worker no disponible; se mantiene fallback wa.me", error));
+    }).catch(async (error) => {
+      console.error("[whatsapp] worker no disponible; se mantiene fallback wa.me", error);
+      await logError("wa_worker", error, { flow: "accept_risk" }, tenant.id);
+    });
   }
   revalidatePath("/app");
 }

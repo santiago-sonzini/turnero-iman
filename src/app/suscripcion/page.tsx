@@ -25,6 +25,7 @@ export default async function Subscription() {
       ? tenant.mpLastPaymentAt?.toISOString() ?? null
       : null}
     mpReady={mpConfigurado() && !DEMO_MODE}
+    subscriptionInactive={accesoDe(tenant).estado === "bloqueado"}
     prices={{ TURNOS: formatoArs(PLANES.TURNOS.precioArs), TURNOS_AUTO: formatoArs(PLANES.TURNOS_AUTO.precioArs) }}
   />;
 }

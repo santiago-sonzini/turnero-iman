@@ -31,6 +31,7 @@ export const env = createEnv({
     MP_WEBHOOK_SECRET: z.string().optional(),
     CRON_SECRET: z.string().min(16).optional(),
     RATE_LIMIT_SALT: z.string().min(16).optional(),
+    ADMIN_EMAILS: z.string().optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -69,6 +70,7 @@ export const env = createEnv({
     MP_WEBHOOK_SECRET: process.env.MP_WEBHOOK_SECRET,
     CRON_SECRET: process.env.CRON_SECRET,
     RATE_LIMIT_SALT: process.env.RATE_LIMIT_SALT,
+    ADMIN_EMAILS: process.env.ADMIN_EMAILS,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   },
   /**

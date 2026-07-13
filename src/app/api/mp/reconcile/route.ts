@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/env";
 import { systemDb } from "@/server/db";
 import { reconciliarTenantMercadoPago } from "@/server/mp/reconcile";
+import { logError } from "@/server/observability/log";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export async function GET(req: NextRequest) {
       results[tenant.id] = (await reconciliarTenantMercadoPago(tenant.id)).status;
     } catch (error) {
       console.error("[mp] reconciliación automática falló", tenant.id, error);
+      await logError("reconcile_cron", error, undefined, tenant.id);
       results[tenant.id] = "error";
     }
   }

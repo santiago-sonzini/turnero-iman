@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, LogOut, MessageCircle, Plus, Scissors, Settings, Share2, Sparkles, Trash2, Users, X } from "lucide-react";
+import { BarChart3, CalendarDays, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, LogOut, MessageCircle, Plus, Scissors, Settings, Share2, Sparkles, Trash2, Users, X } from "lucide-react";
 import { acceptWhatsappRisk, createPromotion, crearTurnoManual, deleteStaff, ownerAvailability, queueGapFill, saveBookingSettings, saveLogo, saveNotifications, saveProfile, saveService, saveStaff, saveTheme, setAppointmentStatus } from "@/app/actions/turnos";
 import { signOut } from "@/app/actions/auth";
 import { instagramHandle } from "@/lib/instagram";
@@ -12,8 +12,9 @@ import { dateKeyAR, minutesAR, timeAR } from "@/lib/format";
 import { weekdayOf } from "@/lib/availability";
 import { MagnetLogo } from "./magnet-logo";
 import Image from "next/image";
+import { AnalyticsScreen } from "./analytics-screen";
 
-type Screen = "agenda" | "clientes" | "promos" | "servicios" | "ajustes";
+type Screen = "agenda" | "clientes" | "promos" | "servicios" | "analisis" | "ajustes";
 const money = (cents: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 0 }).format(cents / 100);
 const dayKey = dateKeyAR;
 const localDay = dateKeyAR;
@@ -28,6 +29,7 @@ export function AppShell({ data }: { data: any }) {
   const [date, setDate] = useState(new Date());
   const [view, setView] = useState<"dia" | "semana" | "mes">("dia");
   const [sheet, setSheet] = useState<any>(null);
+  const [analytics, setAnalytics] = useState<any>(null);
   const accent = data.profile?.accent ?? "#E94F37";
   const appointments = useMemo(() => data.appointments.map((a: any) => ({ ...a, startsAt: new Date(a.startsAt), endsAt: new Date(a.endsAt) })), [data.appointments]);
 
@@ -51,6 +53,7 @@ export function AppShell({ data }: { data: any }) {
         {screen === "clientes" && <Clients clients={data.clients} profile={data.profile} />}
         {screen === "promos" && <Promos promotions={data.promotions} slug={data.tenant.slug} onCreate={() => setSheet({ type: "promo" })} />}
         {screen === "servicios" && <Services services={data.services} hours={data.workingHours} onCreate={() => setSheet({ type: "service" })} />}
+        {screen === "analisis" && <AnalyticsScreen data={analytics} setData={setAnalytics} />}
         {screen === "ajustes" && <SettingsScreen data={data} onEdit={() => setSheet({ type: "profile" })} onWhatsapp={() => setSheet({ type: "whatsapp" })} onBooking={() => setSheet({ type: "booking" })} onNotif={() => setSheet({ type: "notif" })} onStaff={() => setSheet({ type: "staff" })} onTheme={() => setSheet({ type: "theme" })} />}
       </main>
 
@@ -61,6 +64,7 @@ export function AppShell({ data }: { data: any }) {
         <Tab active={screen === "clientes"} icon={<Users />} label="Clientes" onClick={() => nav("clientes")} />
         <Tab active={screen === "promos"} icon={<Sparkles />} label="Promos" onClick={() => nav("promos")} />
         <Tab active={screen === "servicios"} icon={<Scissors />} label="Servicios" onClick={() => nav("servicios")} />
+        <Tab active={screen === "analisis"} icon={<BarChart3 />} label="Análisis" onClick={() => nav("analisis")} />
         <Tab active={screen === "ajustes"} icon={<Settings />} label="Ajustes" onClick={() => nav("ajustes")} />
       </nav>
 

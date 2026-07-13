@@ -85,6 +85,47 @@ async function main() {
       },
     });
   }
+
+  const demoTenants = [
+    { id: "demo-activo-lavanda", name: "Estética Lavanda", slug: "estetica-lavanda", plan: PlanTier.TURNOS, planStatus: SubscriptionStatus.ACTIVE, mpLastPaymentAt: at(-12, 9) },
+    { id: "demo-activo-taller", name: "Taller Norte", slug: "taller-norte", plan: PlanTier.TURNOS, planStatus: SubscriptionStatus.ACTIVE, mpLastPaymentAt: at(-8, 11) },
+    { id: "demo-trial-vigente", name: "Studio Alma", slug: "studio-alma", plan: PlanTier.TURNOS_AUTO, planStatus: SubscriptionStatus.TRIALING, trialEndsAt: at(4, 12) },
+    { id: "demo-trial-vencido", name: "Masajes Centro", slug: "masajes-centro", plan: PlanTier.TURNOS, planStatus: SubscriptionStatus.TRIALING, trialEndsAt: at(-9, 12) },
+    { id: "demo-past-due", name: "Barber Club", slug: "barber-club", plan: PlanTier.TURNOS_AUTO, planStatus: SubscriptionStatus.PAST_DUE, graceUntil: at(3, 12) },
+    { id: "demo-cancelando", name: "Nails Palermo", slug: "nails-palermo", plan: PlanTier.TURNOS, planStatus: SubscriptionStatus.CANCELLED, cancellationEffectiveAt: at(6, 12) },
+    { id: "demo-onboarding", name: "Nuevo Espacio", slug: "nuevo-espacio", plan: null, planStatus: SubscriptionStatus.ONBOARDING },
+  ];
+  for (const item of demoTenants) {
+    const trialEndsAt = "trialEndsAt" in item ? item.trialEndsAt : undefined;
+    const graceUntil = "graceUntil" in item ? item.graceUntil : undefined;
+    const cancellationEffectiveAt = "cancellationEffectiveAt" in item ? item.cancellationEffectiveAt : undefined;
+    const mpLastPaymentAt = "mpLastPaymentAt" in item ? item.mpLastPaymentAt : undefined;
+    await db.tenant.upsert({
+      where: { id: item.id },
+      update: { plan: item.plan, planStatus: item.planStatus, trialEndsAt, graceUntil, cancellationEffectiveAt, mpLastPaymentAt },
+      create: { ...item, onboardingStep: item.planStatus === SubscriptionStatus.ONBOARDING ? "negocio" : "listo" },
+    });
+  }
+
+  const activity = [
+    ["seed-cuenta-lavanda", "demo-activo-lavanda", "cuenta_creada", -26],
+    ["seed-pago-lavanda", "demo-activo-lavanda", "pago_aprobado", -18],
+    ["seed-cuenta-taller", "demo-activo-taller", "cuenta_creada", -15],
+    ["seed-pago-taller", "demo-activo-taller", "pago_aprobado", -8],
+    ["seed-cuenta-alma", "demo-trial-vigente", "cuenta_creada", -3],
+    ["seed-plan-alma", "demo-trial-vigente", "plan_seleccionado", -2],
+    ["seed-rechazo-barber", "demo-past-due", "pago_rechazado", -1],
+  ] as const;
+  for (const [id, eventTenantId, event, day] of activity) {
+    await db.funnelEvent.upsert({ where: { id }, update: {}, create: { id, tenantId: eventTenantId, event, createdAt: at(day, 14) } });
+  }
+
+  await db.emailLog.upsert({ where: { id: "seed-email-ok" }, update: {}, create: { id: "seed-email-ok", tenantId, template: "confirmacion_cliente", to: "cliente@example.com", ok: true } });
+  await db.emailLog.upsert({ where: { id: "seed-email-error" }, update: {}, create: { id: "seed-email-error", tenantId: "demo-past-due", template: "aviso_turno_admin", to: "admin@example.com", ok: false, error: "SMTP demo: destinatario rechazado" } });
+  await db.errorLog.upsert({ where: { id: "seed-error-wa" }, update: {}, create: { id: "seed-error-wa", scope: "wa_worker", tenantId: "demo-past-due", message: "Worker demo sin conexión" } });
+  for (const [service, ok, latencyMs] of [["db", true, 18], ["mercadopago", true, 240], ["smtp", true, 310], ["wa_server", false, 120]] as const) {
+    await db.healthCheck.upsert({ where: { id: `seed-health-${service}` }, update: {}, create: { id: `seed-health-${service}`, service, ok, latencyMs, detail: ok ? "Seed operativo" : "Seed degradado" } });
+  }
 }
 
 main().finally(() => db.$disconnect());

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, CreditCard, Sparkles } from "lucide-react";
 import { activarPago, cambiarPlan, cancelarSuscripcion } from "@/app/actions/billing";
 
-export function Panel({ plan, acceso, hasMp, lastPaymentAt, mpReady, prices }: any) {
+export function Panel({ plan, acceso, hasMp, lastPaymentAt, mpReady, prices, subscriptionInactive }: any) {
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
 
@@ -40,6 +40,7 @@ export function Panel({ plan, acceso, hasMp, lastPaymentAt, mpReady, prices }: a
   return <main>
     <p className="eyebrow">TU SUSCRIPCIÓN</p>
     <h1>{acceso.estado === "cancelado" ? "Suscripción cancelada" : acceso.estado === "bloqueado" ? "Reactivá tu agenda" : "Todo bajo control"}</h1>
+    {subscriptionInactive && <p className="form-error">Tu suscripción no está activa. Reactivala en Ajustes → Suscripción. Tus datos siguen guardados.</p>}
     <div className="tarjeta-fila" style={{ cursor: "default" }}>
       <span className="emo">💳</span>
       <div className="info">

@@ -7,6 +7,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { systemDb } from "@/server/db";
 import { DIAS_GRACIA, finPeriodoSuscripcion } from "@/server/plans";
 import { trackFor } from "@/server/track";
+import { logError } from "@/server/observability/log";
 import {
   appUrl,
   buscarPagosAutorizados,
@@ -101,7 +102,7 @@ async function enviarBienvenida(tenant: Tenant): Promise<void> {
     const profile = await systemDb.businessProfile.findUnique({ where: { tenantId: tenant.id }, select: { accent: true } });
     const { emailBienvenidaSuscripcion } = await import("@/lib/emails");
     const { subject, html } = emailBienvenidaSuscripcion({ negocio: tenant.name, accent: profile?.accent, panelUrl: `${appUrl()}/app` });
-    await sendEmail({ to, subject, html });
+    await sendEmail({ to, subject, html, tenantId: tenant.id, template: "bienvenida_suscripcion" });
   } catch (e) {
     console.error("[email] bienvenida suscripción falló", e);
   }
@@ -263,6 +264,7 @@ export async function reconciliarPagosSuscripcion(
         if (payment.date_approved) occurredAt = new Date(payment.date_approved);
       } catch (error) {
         console.error("[mp] no se pudo verificar el pago asociado a la factura", approved.id, error);
+        await logError("mp_webhook", error, { approvedPaymentId: approved.id }, tenantId);
         return { paid: false, lastPaymentAt: null };
       }
     }

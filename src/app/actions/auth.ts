@@ -9,6 +9,7 @@ import { trackFor } from '@/server/track';
 import { ensureUniqueSlug } from '@/lib/slug';
 import { z } from 'zod';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { isFounderEmail } from '@/server/admin/guard';
 
 const credentialsSchema = z.object({ email: z.string().trim().email().max(254), password: z.string().min(8).max(200) });
 
@@ -50,6 +51,7 @@ export async function login(values: { email: string; password: string }) {
 
   if (data) {
     const tenant = await ensureTenantForUser(data.user)
+    if (isFounderEmail(data.user.email)) redirect('/admin')
     redirect(tenant.planStatus === "ONBOARDING" ? "/onboarding" : `/${tenant.slug}`)
   }
 
@@ -68,20 +70,39 @@ async function slugDe(nombre: string): Promise<string> {
  * dueño y el perfil, y arranca el onboarding (el trial arranca recién al
  * elegir plan, después de ver el resultado con sus propios datos).
  */
+// Versión vigente de los términos aceptados en el alta; se registra junto con
+// la fecha para tener prueba del consentimiento (estándar de la industria).
+const TERMS_VERSION = '2026-07-13'
+
 export async function signup(values: {
   email: string
   password: string
   negocio: string
+  acepta: boolean
 }) {
   if (DEMO_MODE) redirect('/app')
-  const parsed = credentialsSchema.extend({ negocio: z.string().trim().min(2).max(80) }).safeParse(values);
-  if (!parsed.success) return { status: 400, message: "Revisá el nombre, el email y la clave." };
+  const parsed = credentialsSchema
+    .extend({ negocio: z.string().trim().min(2).max(80), acepta: z.literal(true) })
+    .safeParse(values);
+  if (!parsed.success) {
+    const rechazoTerminos = parsed.error.issues.some((issue) => issue.path[0] === 'acepta');
+    return {
+      status: 400,
+      message: rechazoTerminos
+        ? "Necesitás aceptar los términos y condiciones para crear tu cuenta."
+        : "Revisá el nombre, el email y la clave.",
+    };
+  }
   const supabase = await createClientServer()
   const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      data: { name: parsed.data.negocio },
+      data: {
+        name: parsed.data.negocio,
+        terms_accepted_at: new Date().toISOString(),
+        terms_version: TERMS_VERSION,
+      },
     },
   })
 
@@ -101,6 +122,7 @@ export async function signup(values: {
   }
 
   await ensureTenantForUser(data.user, parsed.data.negocio)
+  if (isFounderEmail(data.user.email)) redirect('/admin')
   redirect('/onboarding')
 }
 

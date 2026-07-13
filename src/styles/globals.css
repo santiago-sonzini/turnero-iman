@@ -155,6 +155,26 @@ body::after{
 .tabbar button .pt{width:5px;height:5px;border-radius:50%;background:transparent;margin-top:1px}
 .tabbar button.activo .pt{background:var(--acento)}
 
+/* analítica del dueño */
+.analytics-view{padding:22px 0 16px;display:grid;gap:18px}
+.an-head h1{font-size:clamp(1.8rem,7vw,2.45rem)}
+.an-head p:last-child{margin-top:5px;color:var(--tinta-suave);font-size:.92rem}
+.an-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.an-kpi{min-height:150px;border:var(--borde);border-radius:18px;background:var(--blanco);box-shadow:var(--sombra-dura);padding:14px;display:flex;flex-direction:column}
+.an-kpi>span{align-self:flex-end;display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--acento-suave);color:var(--acento-osc)}
+.an-kpi>span svg{width:18px;height:18px}.an-kpi small{margin-top:-24px;padding-right:36px;color:var(--tinta-suave);font-size:.7rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;line-height:1.25}
+.an-kpi>b{margin-top:auto;font-family:var(--display);font-size:1.45rem;line-height:1.1}.an-kpi>p{margin-top:4px;color:var(--tinta-suave);font-size:.72rem}
+.an-kpis .an-kpi:first-child{grid-column:span 2;background:var(--tinta);color:var(--crema);box-shadow:0 4px 0 #1c130d}
+.an-kpis .an-kpi:first-child>span{background:rgba(255,255,255,.12);color:var(--amarillo)}.an-kpis .an-kpi:first-child small,.an-kpis .an-kpi:first-child p{color:#cfc2b8}
+.an-panel{border:var(--borde);border-radius:20px;background:var(--blanco);box-shadow:var(--sombra-dura);padding:16px;min-width:0}
+.an-section-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}.an-section-head h2{font-size:1.12rem}.an-section-head p{margin-top:3px;color:var(--tinta-suave);font-size:.75rem}
+.an-grid{display:grid;gap:14px}.an-bars{display:grid;gap:13px}.an-bars>div>span{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px;font-size:.8rem}.an-bars em{font-style:normal;font-weight:900;color:var(--tinta-suave)}
+.an-bars i{display:block;height:9px;border-radius:99px;background:var(--linea);overflow:hidden}.an-bars u{display:block;height:100%;border-radius:inherit;background:var(--acento);text-decoration:none}
+.an-client-split{display:grid;grid-template-columns:1fr 1fr;gap:10px}.an-client-split span{border-radius:14px;background:var(--crema);padding:18px;text-align:center}.an-client-split b{display:block;font:600 2rem/1 var(--display)}.an-client-split small{color:var(--tinta-suave);font-size:.76rem}.an-empty{padding:45px 12px;text-align:center;color:var(--tinta-suave);font-size:.85rem}
+.an-loading{position:relative;overflow:hidden;background:var(--linea);border-color:transparent;box-shadow:none}.an-loading::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.65),transparent);animation:an-shimmer 1.2s infinite}@keyframes an-shimmer{to{transform:translateX(100%)}}
+@media(min-width:650px){.an-kpis{grid-template-columns:repeat(5,minmax(0,1fr))}.an-kpis .an-kpi:first-child{grid-column:span 2}.an-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:420px){.tabbar button{font-size:.58rem}.tabbar button svg{width:21px;height:21px}}
+
 /* FAB */
 .fab{position:fixed;right:16px;bottom:calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);z-index:29;
   width:58px;height:58px;border-radius:50%;background:var(--acento);color:var(--acento-on);
@@ -225,6 +245,14 @@ body::after{
 .tema-card>svg{width:20px;height:20px;color:var(--acento);flex:none}
 .share-staff-tit{font-weight:900;font-size:.82rem;margin:16px 0 8px;color:var(--tinta)}
 /* ---------- guía / documentación (/ayuda) --------------------------------- */
+.status-page{
+  min-height:100svh;width:min(100%,640px);margin:0 auto;padding:32px 20px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center
+}
+.status-page h1{font-size:clamp(2rem,8vw,3.2rem);max-width:13ch;margin-bottom:12px}
+.status-page .docs-lead{max-width:38ch}
+
 .docs{max-width:640px;margin:0 auto;padding:18px 18px 60px}
 .docs-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}
 .docs-brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:600}
@@ -236,6 +264,16 @@ body::after{
   background:var(--blanco);box-shadow:var(--sombra-dura);padding:14px;margin-bottom:26px}
 .docs-indice a{color:var(--tinta);text-decoration:none;font-weight:800;font-size:.84rem;padding:3px 2px}
 .docs-indice a:hover{color:var(--acento)}
+
+/* ---------- páginas legales (/privacidad, /terminos) --------------------- */
+.docs-page{width:min(100%,680px);margin:0 auto;padding:26px 20px 64px;animation:sube .34s var(--resorte) both}
+.docs-page .bk-volver{margin-bottom:18px}
+.docs-page h1{font-size:clamp(1.9rem,6vw,2.5rem);margin-bottom:10px}
+.docs-page h2{font-size:1.05rem;margin:26px 0 6px}
+.docs-page p{color:var(--tinta);font-weight:600;font-size:.92rem;line-height:1.62;margin:0}
+.docs-page .docs-lead{color:var(--tinta-suave);font-weight:700;font-size:1rem;margin-bottom:6px}
+.docs-page a{color:var(--acento);font-weight:800;text-decoration:underline}
+.docs-page .ayuda{margin-top:30px;color:var(--tinta-suave);font-size:.8rem;font-weight:700}
 .docs-sec{border:var(--borde);border-radius:18px;background:var(--blanco);box-shadow:var(--sombra-dura);
   padding:18px 18px 8px;margin-bottom:14px;scroll-margin-top:16px}
 .docs-sec h2{font-size:1.2rem;margin-bottom:10px}
@@ -876,9 +914,82 @@ button.tarjeta-fila:active,a.tarjeta-fila:active{transform:translateY(2px)}
   .bk{max-width:560px}
 }
 
+/* ---------- loading · "preparando tu agenda" ----------------------------- */
+.loading-screen{
+  position:fixed;inset:0;z-index:60;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:30px;padding:32px;text-align:center;
+  background:radial-gradient(130% 80% at 50% 34%,#FFFCF4 0%,var(--crema) 60%);
+  animation:loading-in .4s var(--resorte) both;
+}
+@keyframes loading-in{from{opacity:0}to{opacity:1}}
+
+.loading-stage{position:relative;width:190px;height:190px;display:grid;place-items:center}
+
+/* campo magnético: anillos que laten hacia afuera */
+.loading-rings{position:absolute;inset:0;display:grid;place-items:center}
+.loading-rings span{
+  position:absolute;width:76px;height:76px;border-radius:50%;
+  border:2.5px solid color-mix(in srgb,var(--acento) 42%,transparent);
+  animation:loading-ring 2.7s ease-out infinite;
+}
+.loading-rings span:nth-child(2){animation-delay:.9s}
+.loading-rings span:nth-child(3){animation-delay:1.8s}
+@keyframes loading-ring{
+  0%{transform:scale(.55);opacity:.75}
+  80%{opacity:0}
+  100%{transform:scale(2.5);opacity:0}
+}
+
+/* imán protagonista, más grande y con latido de flotación propio */
+.loading-stage .magnet-logo{width:92px;height:102px;animation:magnet-float 3.4s ease-in-out infinite;position:relative;z-index:2}
+
+/* "turnos" atraídos hacia los polos del imán */
+.loading-orbit{position:absolute;inset:0;z-index:1}
+.loading-orbit i{
+  position:absolute;top:44%;left:50%;
+  width:20px;height:20px;margin:-10px;
+  display:grid;place-items:center;
+  font-style:normal;font-size:10px;font-weight:900;line-height:1;
+  color:var(--tinta);background:var(--blanco);
+  border:2.5px solid var(--tinta);border-radius:7px;
+  box-shadow:0 2px 0 var(--tinta);
+  opacity:0;
+  animation:loading-attract 3s cubic-bezier(.55,0,.65,1) infinite;
+}
+@keyframes loading-attract{
+  0%{transform:translate(var(--sx),var(--sy)) scale(.6) rotate(var(--r));opacity:0}
+  16%{opacity:1}
+  70%{opacity:1}
+  100%{transform:translate(0,-52px) scale(.28) rotate(0deg);opacity:0}
+}
+
+.loading-copy{max-width:22rem;display:grid;gap:5px;animation:sube .5s var(--resorte) .1s both}
+.loading-copy h1{font-size:1.5rem;display:inline-flex;align-items:flex-end;justify-content:center;gap:1px}
+.loading-sub{margin:2px 0 0;color:var(--tinta-suave);font-weight:700;font-size:.9rem;line-height:1.5}
+
+/* puntos que ondean al final del título */
+.loading-dots{display:inline-flex;gap:1px;margin-left:1px}
+.loading-dots i{font-style:normal;animation:loading-dot 1.4s ease-in-out infinite}
+.loading-dots i:nth-child(2){animation-delay:.18s}
+.loading-dots i:nth-child(3){animation-delay:.36s}
+@keyframes loading-dot{0%,65%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
+
 /* ---------- accesibilidad -------------------------------------------------- */
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;
     transition-duration:.01ms!important}
   html{scroll-behavior:auto}
 }
+
+/* Founder cockpit: tokens shadcn locales, aislados del panel cálido de dueños. */
+.admin-shell{
+  --background:240 10% 4%;--foreground:0 0% 98%;--card:240 6% 8%;--card-foreground:0 0% 98%;
+  --primary:24 95% 60%;--primary-foreground:240 10% 4%;--secondary:240 4% 16%;--secondary-foreground:0 0% 96%;
+  --muted:240 4% 16%;--muted-foreground:240 5% 65%;--accent:24 95% 60%;--accent-foreground:240 10% 4%;
+  --border:240 4% 20%;--input:240 4% 20%;--ring:24 95% 60%;--destructive:0 63% 50%;--destructive-foreground:0 0% 98%;
+  font-family:var(--cuerpo)
+}
+.admin-shell h1,.admin-shell h2,.admin-shell h3{font-family:var(--cuerpo);font-weight:800}
+.admin-shell .magnet-logo{width:32px;height:36px}
+.admin-shell :focus-visible{outline-color:#fb923c}

@@ -11,6 +11,7 @@ type Mode = "signin" | "signup";
 export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [showPassword, setShowPassword] = useState(false);
+  const [accepted, setAccepted] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -27,8 +28,9 @@ export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
       const password = String(formData.get("password") ?? "");
       if (!email.includes("@")) return setError("Ingresá un email válido.");
       if (password.length < 8) return setError("La clave tiene que tener al menos 8 caracteres.");
+      if (mode === "signup" && !accepted) return setError("Necesitás aceptar los términos y condiciones para crear tu cuenta.");
       const result = mode === "signup"
-        ? await signup({ email, password, negocio: String(formData.get("negocio") ?? "") })
+        ? await signup({ email, password, negocio: String(formData.get("negocio") ?? ""), acepta: accepted })
         : await login({ email, password });
       if (result?.status === 200) {
         setNotice(result.message);
@@ -75,11 +77,15 @@ export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
             {mode === "signup" && <label className="auth-field" htmlFor="negocio"><span>Nombre de tu negocio</span><div><Store /><input id="negocio" name="negocio" required minLength={2} autoComplete="organization" placeholder="Ej: Barbería El Roble" /></div></label>}
             <label className="auth-field" htmlFor="email"><span>Email</span><div><Mail /><input id="email" name="email" required type="email" autoComplete="username" placeholder="vos@tubarberia.com" /></div></label>
             <label className="auth-field" htmlFor="password"><span>Clave</span><div><LockKeyhole /><input id="password" name="password" required minLength={8} type={showPassword ? "text" : "password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} placeholder="Mínimo 8 caracteres" /><button type="button" tabIndex={-1} aria-label={showPassword ? "Ocultar clave" : "Mostrar clave"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</button></div></label>
+            {mode === "signup" && <label className="auth-consent" htmlFor="acepta">
+              <input id="acepta" name="acepta" type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} aria-invalid={!!error && !accepted} />
+              <span>Acepto los <Link href="/terminos" target="_blank" rel="noopener">Términos y Condiciones</Link> y la <Link href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</Link>, incluido el tratamiento y mi acceso a los datos.</span>
+            </label>}
             {error && <p className="auth-message error">{error}</p>}
             {notice && <p className="auth-message success">{notice}</p>}
             <button className="auth-submit" disabled={pending}>{pending ? <><span className="auth-spinner" /> Un segundo…</> : mode === "signup" ? <>Crear mi cuenta <Scissors /></> : "Entrar a Imán"}</button>
           </form>
-          <p className="auth-fineprint">{mode === "signup" ? <>Al crear tu cuenta aceptás la <Link href="/privacidad">política de privacidad</Link>. Cancelás cuando quieras.</> : "¿Todavía no tenés cuenta? "}{mode === "signin" && <button onClick={() => switchMode("signup")}>Probalo gratis</button>}</p>
+          <p className="auth-fineprint">{mode === "signup" ? <>7 días gratis. Cancelás cuando quieras, sin cargos hoy.</> : "¿Todavía no tenés cuenta? "}{mode === "signin" && <button onClick={() => switchMode("signup")}>Probalo gratis</button>}</p>
         </div>
       </section>
     </main>

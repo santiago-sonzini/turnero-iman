@@ -371,3 +371,42 @@ model FunnelEvent {
   @@index([event, createdAt])
   @@index([tenantId])
 }
+
+// Registro operativo de los intentos de email. No se relaciona con Tenant a
+// propósito: también conserva eventos globales y sobrevive a bajas de cuentas.
+model EmailLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  template  String
+  to        String
+  ok        Boolean
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([tenantId])
+}
+
+model ErrorLog {
+  id        String   @id @default(cuid())
+  scope     String
+  message   String
+  stack     String?
+  tenantId  String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([scope, createdAt])
+}
+
+model HealthCheck {
+  id        String   @id @default(cuid())
+  service   String
+  ok        Boolean
+  latencyMs Int?
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([service, createdAt])
+}
