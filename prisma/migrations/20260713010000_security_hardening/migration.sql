@@ -2,7 +2,8 @@
 -- de suscripciones, leases del worker, rate limiting e idempotencia de webhooks.
 ALTER TABLE "Tenant"
   ADD COLUMN "mpCheckoutTokenHash" TEXT,
-  ADD COLUMN "mpCheckoutExpiresAt" TIMESTAMP(3);
+  ADD COLUMN "mpCheckoutExpiresAt" TIMESTAMP(3),
+  ADD COLUMN "mpLastPaymentPreapprovalId" TEXT;
 
 ALTER TABLE "Appointment"
   ADD COLUMN "publicTokenHash" TEXT,

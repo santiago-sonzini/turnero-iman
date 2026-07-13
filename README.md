@@ -32,7 +32,7 @@ npm run build
 - Next.js 16 App Router, React 19, Server Components y Server Actions.
 - PostgreSQL + Prisma. El cliente scoped de `src/server/db.ts` inyecta `tenantId`, y las claves compuestas también impiden cruces de tenant en la base.
 - Supabase Auth para dueños. Sin Supabase, el modo demo solo existe en desarrollo; producción falla cerrada.
-- Mercado Pago Suscripciones con webhook firmado, ventana temporal, idempotencia persistente y estados de trial, gracia y bloqueo.
+- Mercado Pago Suscripciones con una preapproval individual por tenant, webhook firmado, idempotencia persistente y estados de trial, gracia y bloqueo.
 - `Turnos` — ARS 15.000/mes: agenda, reservas, clientes, promos, links de WhatsApp y email opcional.
 - `Turnos Pro` — ARS 30.000/mes: agrega profesionales, temas y automatización de WhatsApp.
 
@@ -67,6 +67,7 @@ Nunca copies sesiones entre tenants ni las subas a Git.
 - Los tenants sin acceso vigente no pueden recibir reservas.
 - Los datos públicos se exponen mediante DTOs mínimos; credenciales y facturación no se serializan al navegador.
 - Se aplican CSP y headers de seguridad, validación estricta de links externos y controles de origen/identidad en billing y webhooks.
+- La autorización del débito y el cobro son estados separados: el panel consulta las facturas de Mercado Pago y solo muestra “pago verificado” ante un pago aprobado.
 - No se carga Meta Pixel. La política pública está en `/privacidad`.
 
 ## Migraciones
@@ -78,3 +79,5 @@ npm run db:migrate
 ```
 
 `20260713010000_security_hardening` agrega tokens por turno, idempotencia de webhooks, rate limiting, leases del worker e integridad multi-tenant, e invalida los tokens históricos por cliente. La columna legacy se conserva temporalmente para un rollout sin caída y ya no se usa en el código nuevo.
+
+La ruta protegida `/api/mp/reconcile` revisa diariamente suscripciones abandonadas, vínculos y cobros. En Vercel requiere `CRON_SECRET`; el cron está declarado en `vercel.json`.

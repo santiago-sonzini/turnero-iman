@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { verificarFirma } from "./webhook";
+import { facturaAprobada, preapprovalPerteneceATenant, verificarFirma } from "./webhook";
 
 describe("firma de Mercado Pago", () => {
   const secret = "webhook-test-secret";
@@ -36,5 +36,35 @@ describe("firma de Mercado Pago", () => {
       secreto: secret,
       nowMs: nowMs + 11 * 60_000,
     })).toBe(false);
+  });
+});
+
+describe("propiedad y evidencia de pago", () => {
+  it("exige que ID persistido y external_reference pertenezcan al mismo tenant", () => {
+    const tenant = { id: "tenant-a", mpPreapprovalId: "pre-a" };
+    expect(preapprovalPerteneceATenant(
+      { id: "pre-a", external_reference: "tenant-a" }, tenant,
+    )).toBe(true);
+    expect(preapprovalPerteneceATenant(
+      { id: "pre-victim", external_reference: "tenant-a" }, tenant,
+    )).toBe(false);
+    expect(preapprovalPerteneceATenant(
+      { id: "pre-a", external_reference: "tenant-b" }, tenant,
+    )).toBe(false);
+  });
+
+  it("no confunde autorización con cobro aprobado", () => {
+    expect(facturaAprobada([])).toBeUndefined();
+    expect(facturaAprobada([{
+      id: "invoice-1",
+      preapproval_id: "pre-a",
+      status: "processed",
+      payment: { id: 1, status: "pending" },
+    }])).toBeUndefined();
+    expect(facturaAprobada([{
+      id: "invoice-2",
+      preapproval_id: "pre-a",
+      payment: { id: 2, status: "approved" },
+    }])?.id).toBe("invoice-2");
   });
 });

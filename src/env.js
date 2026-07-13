@@ -29,6 +29,7 @@ export const env = createEnv({
     MP_ACCESS_TOKEN: z.string().optional(),
     // "Firma secreta" del panel de Webhooks de MP: valida x-signature.
     MP_WEBHOOK_SECRET: z.string().optional(),
+    CRON_SECRET: z.string().min(16).optional(),
     RATE_LIMIT_SALT: z.string().min(16).optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
@@ -66,6 +67,7 @@ export const env = createEnv({
     SMTP_FROM_NAME: process.env.SMTP_FROM_NAME,
     MP_ACCESS_TOKEN: process.env.MP_ACCESS_TOKEN,
     MP_WEBHOOK_SECRET: process.env.MP_WEBHOOK_SECRET,
+    CRON_SECRET: process.env.CRON_SECRET,
     RATE_LIMIT_SALT: process.env.RATE_LIMIT_SALT,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   },

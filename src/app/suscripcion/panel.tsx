@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, CreditCard, Sparkles } from "lucide-react";
 import { activarPago, cambiarPlan, cancelarSuscripcion } from "@/app/actions/billing";
 
-export function Panel({ plan, acceso, hasMp, mpReady, prices }: any) {
+export function Panel({ plan, acceso, hasMp, lastPaymentAt, mpReady, prices }: any) {
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
 
@@ -48,6 +48,10 @@ export function Panel({ plan, acceso, hasMp, mpReady, prices }: any) {
       </div>
       <span className={`sem ${estado.clase}`}><i className="pto" />{estado.label}</span>
     </div>
+    {lastPaymentAt && <div className="hint">
+      <span className="hint-emo">✓</span>
+      <div><b>Pago verificado con Mercado Pago</b><p>Último cobro aprobado: {new Intl.DateTimeFormat("es-AR", { dateStyle: "long", timeStyle: "short" }).format(new Date(lastPaymentAt))}.</p></div>
+    </div>}
     {acceso.diasTrial && <div className="hint"><span className="hint-emo">⏳</span><div><b>{acceso.diasTrial} día{acceso.diasTrial === 1 ? "" : "s"} de prueba</b><p>Dejá el débito listo hoy: con el trial de Mercado Pago no se cobra nada hasta que termine.</p></div></div>}
     {acceso.estado === "cancelado" && <div className="hint">
       <span className="hint-emo">{acceso.verificarMercadoPago ? "⚠️" : "✓"}</span>

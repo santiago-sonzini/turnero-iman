@@ -12,10 +12,10 @@ export default async function Retorno(
   const preapprovalId =
     (searchParams.preapproval_id as string) ?? (searchParams.id as string) ?? null;
 
-  let ok = false;
+  let result = { authorized: false, paid: false };
   if (preapprovalId) {
     try {
-      ok = await confirmarRetorno(preapprovalId);
+      result = await confirmarRetorno(preapprovalId);
     } catch (e) {
       console.error("[mp] error verificando retorno", e);
     }
@@ -23,13 +23,15 @@ export default async function Retorno(
 
   return (
     <main style={{ textAlign: "center", paddingTop: 20 }}>
-      <div style={{ fontSize: "3.4rem", marginBottom: 10 }}>{ok ? "🧲" : "🤔"}</div>
+      <div style={{ fontSize: "3.4rem", marginBottom: 10 }}>{result.authorized ? "🧲" : "🤔"}</div>
       <h1 style={{ fontSize: "1.7rem", marginBottom: 8 }}>
-        {ok ? "¡Listo! Débito automático configurado" : "No pudimos confirmar la suscripción"}
+        {result.authorized ? "¡Listo! Débito automático configurado" : "No pudimos confirmar la suscripción"}
       </h1>
       <p className="bk-sub" style={{ maxWidth: "40ch", margin: "0 auto 22px" }}>
-        {ok
-          ? "Con el trial de Mercado Pago, el primer cobro llega recién cuando termina tu prueba gratis. Mientras tanto, a recuperar clientes."
+        {result.authorized
+          ? result.paid
+            ? "Mercado Pago confirmó también un cobro aprobado. Tu suscripción está activa."
+            : "El débito quedó autorizado. Todavía no hay un cobro aprobado: el primer pago llega cuando termina tu prueba gratis."
           : "Si autorizaste el pago en Mercado Pago, en unos minutos el estado se actualiza solo (nos avisa MP). Podés revisarlo en tu suscripción."}
       </p>
       <div style={{ display: "grid", gap: 10, maxWidth: 340, margin: "0 auto" }}>

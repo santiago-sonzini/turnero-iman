@@ -56,7 +56,8 @@ export type MpPreapprovalStatus =
   | "pending" // creada, el payer todavía no autorizó
   | "authorized" // autorizada: se debita todos los meses
   | "paused"
-  | "cancelled";
+  | "cancelled"
+  | "canceled";
 
 const autoRecurring = (montoArs: number, trialDias?: number) => {
   const trial = Math.max(0, Math.floor(trialDias ?? 0));
@@ -76,7 +77,10 @@ export type MpPreapproval = {
   external_reference?: string; // nuestro tenantId
   preapproval_plan_id?: string; // si nació de un plan, apunta al plan
   payer_email?: string;
+  payer_id?: number;
   reason?: string;
+  date_created?: string;
+  last_modified?: string;
   next_payment_date?: string;
   auto_recurring?: {
     frequency: number;
@@ -99,16 +103,12 @@ export type MpPreapprovalPlan = {
 };
 
 /**
- * Crea un PLAN de suscripción (preapproval_plan) COMPARTIDO y devuelve su
- * init_point. Se crea una sola plantilla por tier y todos los tenants suscriben
- * sobre ella (el mapeo tenant↔suscripción se resuelve con external_reference en
- * el init_point + email del pagador, no con un plan por cliente).
+ * Crea un PLAN de suscripción (preapproval_plan) COMPARTIDO. Cada tenant crea
+ * después su propia /preapproval asociada, con ID y external_reference propios.
  *
- * Se usa el flujo de plan (no /preapproval directo) por dos motivos verificados
- * contra la API: (1) el preapproval directo con free_trial devuelve HTTP 500;
- * (2) `payment_methods_allowed` SOLO lo respeta MP a nivel plan (en el
- * preapproval directo lo ignora), y sin él el checkout habilita solo crédito.
- * `trialDias > 0` activa el free_trial nativo.
+ * El trial y payment_methods_allowed viven en el plan; la preapproval individual
+ * solo vincula esa plantilla con un tenant/pagador. `trialDias > 0` activa el
+ * free_trial nativo.
  */
 export async function crearPlanCompartido(params: {
   razon: string;
@@ -145,6 +145,75 @@ export async function obtenerSuscripcion(id: string): Promise<MpPreapproval> {
 }
 
 /**
+ * Crea la suscripción individual antes de redirigir. A diferencia de abrir el
+ * init_point del plan compartido directamente, MP devuelve aquí el ID que se
+ * persiste en Tenant y external_reference queda atado al tenant desde origen.
+ */
+export async function crearSuscripcionPendiente(params: {
+  planId: string;
+  payerEmail: string;
+  tenantId: string;
+  idempotencyKey: string;
+}): Promise<MpPreapproval> {
+  return mp<MpPreapproval>("/preapproval", {
+    method: "POST",
+    headers: { "X-Idempotency-Key": params.idempotencyKey },
+    body: JSON.stringify({
+      preapproval_plan_id: params.planId,
+      payer_email: params.payerEmail,
+      external_reference: params.tenantId,
+      back_url: `${appUrl()}/suscripcion/retorno`,
+      status: "pending",
+    }),
+  });
+}
+
+type MpSearch<T> = { paging?: { total?: number }; results?: T[] };
+
+export async function buscarSuscripciones(params: {
+  payerEmail: string;
+  planId: string;
+}): Promise<MpPreapproval[]> {
+  const query = new URLSearchParams({
+    payer_email: params.payerEmail,
+    preapproval_plan_id: params.planId,
+    limit: "100",
+  });
+  const result = await mp<MpSearch<MpPreapproval>>(`/preapproval/search?${query}`);
+  return result.results ?? [];
+}
+
+export function suscripcionCancelada(pre: Pick<MpPreapproval, "status">): boolean {
+  return pre.status === "cancelled" || pre.status === "canceled";
+}
+
+export function haySuscripcionLegacySinReferencia(subscriptions: MpPreapproval[]): boolean {
+  return subscriptions.some((pre) => !pre.external_reference && !suscripcionCancelada(pre));
+}
+
+/** Selección determinista para reconciliar duplicados del mismo tenant. */
+export function elegirSuscripcionCanonica(
+  subscriptions: MpPreapproval[],
+  tenantId: string,
+): MpPreapproval | null {
+  const exactas = subscriptions.filter(
+    (pre) => pre.external_reference === tenantId && !suscripcionCancelada(pre),
+  );
+  const prioridad: Record<MpPreapprovalStatus, number> = {
+    authorized: 0,
+    paused: 1,
+    pending: 2,
+    cancelled: 3,
+    canceled: 3,
+  };
+  return exactas.sort((a, b) => {
+    const status = prioridad[a.status] - prioridad[b.status];
+    if (status !== 0) return status;
+    return String(a.date_created ?? a.id).localeCompare(String(b.date_created ?? b.id));
+  })[0] ?? null;
+}
+
+/**
  * Cambio de plan (upgrade/downgrade): actualiza el monto del débito. Según el
  * comportamiento de MP, el monto nuevo aplica al PRÓXIMO ciclo de cobro (no
  * hay prorrateo automático); lo reflejamos igual en el tenant al instante.
@@ -175,12 +244,22 @@ export type MpAuthorizedPayment = {
   status?: string; // scheduled | processed | recycling ...
   payment?: { id: number; status: string; status_detail?: string; date_approved?: string };
   external_reference?: string;
+  date_created?: string;
+  last_modified?: string;
 };
 
 export async function obtenerPagoAutorizado(
   id: string
 ): Promise<MpAuthorizedPayment> {
   return mp<MpAuthorizedPayment>(`/authorized_payments/${id}`);
+}
+
+export async function buscarPagosAutorizados(
+  preapprovalId: string,
+): Promise<MpAuthorizedPayment[]> {
+  const query = new URLSearchParams({ preapproval_id: preapprovalId, limit: "100" });
+  const result = await mp<MpSearch<MpAuthorizedPayment>>(`/authorized_payments/search?${query}`);
+  return result.results ?? [];
 }
 
 export type MpPayment = {

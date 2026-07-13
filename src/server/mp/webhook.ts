@@ -9,9 +9,11 @@ import { DIAS_GRACIA, finPeriodoSuscripcion } from "@/server/plans";
 import { trackFor } from "@/server/track";
 import {
   appUrl,
+  buscarPagosAutorizados,
   obtenerPago,
   obtenerPagoAutorizado,
   obtenerSuscripcion,
+  suscripcionCancelada,
   type MpPreapproval,
 } from "./preapproval";
 import type { Tenant } from "@prisma/client";
@@ -60,20 +62,29 @@ export function verificarFirma(params: {
   }
 }
 
+export function preapprovalPerteneceATenant(
+  pre: Pick<MpPreapproval, "id" | "external_reference">,
+  tenant: Pick<Tenant, "id" | "mpPreapprovalId">,
+): boolean {
+  return pre.external_reference === tenant.id
+    && (!tenant.mpPreapprovalId || tenant.mpPreapprovalId === pre.id);
+}
+
 async function tenantDePreapproval(pre: MpPreapproval): Promise<Tenant | null> {
+  if (!pre.preapproval_plan_id) return null;
+  const planPropio = await systemDb.mpPlan.findUnique({
+    where: { mpPlanId: pre.preapproval_plan_id },
+    select: { mpPlanId: true },
+  });
+  if (!planPropio) return null;
+
   const porId = await systemDb.tenant.findUnique({
     where: { mpPreapprovalId: pre.id },
   });
-  if (porId) return porId;
+  if (porId && preapprovalPerteneceATenant(pre, porId)) return porId;
   if (pre.external_reference) {
     const porRef = await systemDb.tenant.findUnique({ where: { id: pre.external_reference } });
-    if (porRef) return porRef;
-  }
-  // Plan compartido: el preapproval_plan_id NO distingue tenants (es el mismo
-  // para todos los del tier), así que el fallback es el email del pagador.
-  if (pre.payer_email) {
-    const matches = await systemDb.tenant.findMany({ where: { mpPayerEmail: pre.payer_email }, take: 2 });
-    return matches.length === 1 ? matches[0]! : null;
+    if (porRef && preapprovalPerteneceATenant(pre, porRef)) return porRef;
   }
   return null;
 }
@@ -100,16 +111,20 @@ async function enviarBienvenida(tenant: Tenant): Promise<void> {
  * Sincroniza el estado del tenant desde una preapproval de MP (fuente de
  * verdad). Se usa desde el webhook Y desde el retorno de autorización.
  */
-export async function sincronizarPreapproval(pre: MpPreapproval, tenantIdHint?: string): Promise<void> {
-  // tenantIdHint: el retorno lo pasa con el tenant de la sesión, porque en un
-  // plan compartido MP no propaga external_reference ni (para dinero en cuenta)
-  // el email del pagador — así que el vínculo lo fija quien vuelve del checkout.
-  const tenant = tenantIdHint
-    ? await systemDb.tenant.findUnique({ where: { id: tenantIdHint } })
-    : await tenantDePreapproval(pre);
+export async function sincronizarPreapproval(pre: MpPreapproval): Promise<boolean> {
+  const tenant = await tenantDePreapproval(pre);
   if (!tenant) {
+    if (pre.external_reference && suscripcionCancelada(pre)) {
+      const owner = await systemDb.tenant.findUnique({
+        where: { id: pre.external_reference },
+        select: { mpPreapprovalId: true },
+      });
+      // Una preapproval duplicada ya cancelada no debe reabrir ni ensuciar el
+      // tenant canónico, pero sí puede darse por procesada.
+      if (owner?.mpPreapprovalId && owner.mpPreapprovalId !== pre.id) return true;
+    }
     console.warn("[mp] preapproval sin tenant:", pre.id, pre.external_reference);
-    return;
+    return false;
   }
 
   const ahora = new Date();
@@ -130,11 +145,16 @@ export async function sincronizarPreapproval(pre: MpPreapproval, tenantIdHint?: 
         tenant.cancellationEffectiveAt &&
         tenant.mpPreapprovalId === pre.id
       ) break;
-      // Autorizó el débito: si el trial sigue corriendo queda TRIALING (el
-      // primer cobro llega en start_date); si no, ACTIVE. Recién acá se abre el
-      // acceso del flujo con pago, así que damos por cerrado el onboarding.
-      data.planStatus = enTrial ? "TRIALING" : "ACTIVE";
+      // "authorized" confirma el mandato de débito, NO un pago. Durante el
+      // trial habilitamos acceso; fuera del trial solo un pago aprobado permite
+      // ACTIVE. La reconciliación de facturas corrige PAST_DUE si ya cobró.
+      data.planStatus = enTrial
+        ? "TRIALING"
+        : "PAST_DUE";
       data.graceUntil = null;
+      if (!enTrial) {
+        data.graceUntil = tenant.graceUntil ?? new Date(ahora.getTime() + DIAS_GRACIA * 86_400_000);
+      }
       data.cancellationEffectiveAt = null;
       data.mpCancellationPending = false;
       data.onboardingStep = "listo";
@@ -149,6 +169,7 @@ export async function sincronizarPreapproval(pre: MpPreapproval, tenantIdHint?: 
         tenant.graceUntil ?? new Date(ahora.getTime() + DIAS_GRACIA * 86_400_000);
       break;
     case "cancelled":
+    case "canceled":
       data.planStatus = "CANCELLED";
       data.mpCancellationPending = false;
       if (!tenant.cancellationEffectiveAt) {
@@ -166,10 +187,12 @@ export async function sincronizarPreapproval(pre: MpPreapproval, tenantIdHint?: 
   }
 
   await systemDb.tenant.update({ where: { id: tenant.id }, data: data as any });
+  return true;
 }
 
 async function aplicarResultadoPago(
   tenantId: string,
+  preapprovalId: string,
   aprobado: boolean,
   props: Record<string, unknown>,
   occurredAt?: Date,
@@ -177,18 +200,27 @@ async function aplicarResultadoPago(
   const ahora = occurredAt && !Number.isNaN(occurredAt.getTime()) ? occurredAt : new Date();
   if (aprobado) {
     const tenant = await systemDb.tenant.findUnique({ where: { id: tenantId } });
+    if (
+      tenant?.mpLastPaymentPreapprovalId === preapprovalId
+      && tenant.mpLastPaymentAt
+      && tenant.mpLastPaymentAt >= ahora
+    ) return;
     // Un pago/webhook demorado no debe deshacer una baja solicitada. Guardamos
     // el pago para auditoría pero mantenemos CANCELLED y su fecha efectiva.
     const bajaProgramada = tenant?.planStatus === "CANCELLED" && !!tenant.cancellationEffectiveAt;
     await systemDb.tenant.update({
       where: { id: tenantId },
       data: bajaProgramada
-        ? { mpLastPaymentAt: ahora }
-        : { planStatus: "ACTIVE", mpLastPaymentAt: ahora, graceUntil: null },
+        ? { mpLastPaymentAt: ahora, mpLastPaymentPreapprovalId: preapprovalId }
+        : { planStatus: "ACTIVE", mpLastPaymentAt: ahora, mpLastPaymentPreapprovalId: preapprovalId, graceUntil: null },
     });
     await trackFor(tenantId, "pago_aprobado", props);
   } else {
     const tenant = await systemDb.tenant.findUnique({ where: { id: tenantId } });
+    if (tenant?.planStatus === "CANCELLED") {
+      await trackFor(tenantId, "pago_rechazado", { ...props, baja_programada: true });
+      return;
+    }
     await systemDb.tenant.update({
       where: { id: tenantId },
       data: {
@@ -201,6 +233,55 @@ async function aplicarResultadoPago(
   }
 }
 
+/**
+ * Consulta las facturas reales de la preapproval. `authorized` por sí solo no
+ * alcanza: paid=true únicamente si la factura/pago asociado está aprobado.
+ */
+export async function reconciliarPagosSuscripcion(
+  tenantId: string,
+  preapprovalId: string,
+): Promise<{ paid: boolean; lastPaymentAt: Date | null }> {
+  const tenant = await systemDb.tenant.findUnique({ where: { id: tenantId } });
+  if (!tenant || tenant.mpPreapprovalId !== preapprovalId) {
+    return { paid: false, lastPaymentAt: null };
+  }
+  const invoices = await buscarPagosAutorizados(preapprovalId);
+  const ordered = invoices.sort((a, b) => {
+    const ad = Date.parse(a.payment?.date_approved ?? a.last_modified ?? a.date_created ?? "") || 0;
+    const bd = Date.parse(b.payment?.date_approved ?? b.last_modified ?? b.date_created ?? "") || 0;
+    return bd - ad;
+  });
+  const approved = facturaAprobada(ordered);
+  if (approved) {
+    let occurredAt = new Date(
+      approved.payment?.date_approved ?? approved.last_modified ?? approved.date_created ?? Date.now(),
+    );
+    if (approved.payment?.id) {
+      try {
+        const payment = await obtenerPago(String(approved.payment.id));
+        if (payment.status !== "approved") return { paid: false, lastPaymentAt: null };
+        if (payment.date_approved) occurredAt = new Date(payment.date_approved);
+      } catch (error) {
+        console.error("[mp] no se pudo verificar el pago asociado a la factura", approved.id, error);
+        return { paid: false, lastPaymentAt: null };
+      }
+    }
+    if (Number.isNaN(occurredAt.getTime())) occurredAt = new Date();
+    await aplicarResultadoPago(tenantId, preapprovalId, true, { cuota: approved.id, reconciliado: true }, occurredAt);
+    return { paid: true, lastPaymentAt: occurredAt };
+  }
+
+  const rejected = ordered[0]?.payment?.status === "rejected" ? ordered[0] : undefined;
+  if (rejected) {
+    await aplicarResultadoPago(tenantId, preapprovalId, false, { cuota: rejected.id, reconciliado: true });
+  }
+  return { paid: false, lastPaymentAt: null };
+}
+
+export function facturaAprobada(invoices: Awaited<ReturnType<typeof buscarPagosAutorizados>>) {
+  return invoices.find((invoice) => invoice.payment?.status === "approved");
+}
+
 /** Procesa una notificación ya verificada. `tipo` = type|topic del payload. */
 export async function procesarNotificacion(
   tipo: string,
@@ -208,7 +289,9 @@ export async function procesarNotificacion(
 ): Promise<void> {
   if (tipo === "subscription_preapproval") {
     const pre = await obtenerSuscripcion(dataId);
-    await sincronizarPreapproval(pre);
+    if (!(await sincronizarPreapproval(pre))) {
+      throw new Error(`Preapproval ${pre.id} todavía no vinculada`);
+    }
     return;
   }
 
@@ -224,9 +307,9 @@ export async function procesarNotificacion(
     const estadoPago = cuota.payment?.status ?? cuota.status;
     if (estadoPago === "approved" || estadoPago === "processed") {
       const paidAt = cuota.payment?.date_approved ? new Date(cuota.payment.date_approved) : undefined;
-      await aplicarResultadoPago(tenant.id, true, { cuota: cuota.id }, paidAt);
+      await aplicarResultadoPago(tenant.id, preId, true, { cuota: cuota.id }, paidAt);
     } else if (estadoPago === "rejected") {
-      await aplicarResultadoPago(tenant.id, false, { cuota: cuota.id });
+      await aplicarResultadoPago(tenant.id, preId, false, { cuota: cuota.id });
     }
     return;
   }
@@ -240,10 +323,13 @@ export async function procesarNotificacion(
       (await systemDb.tenant.findUnique({ where: { id: ref } })) ??
       (await systemDb.tenant.findUnique({ where: { mpPreapprovalId: ref } }));
     if (!tenant) return;
+    const paymentPreapprovalId = pago.metadata?.preapproval_id
+      ?? (ref === tenant.mpPreapprovalId ? ref : tenant.mpPreapprovalId);
+    if (!paymentPreapprovalId || paymentPreapprovalId !== tenant.mpPreapprovalId) return;
     if (pago.status === "approved") {
-      await aplicarResultadoPago(tenant.id, true, { pago: pago.id }, pago.date_approved ? new Date(pago.date_approved) : undefined);
+      await aplicarResultadoPago(tenant.id, paymentPreapprovalId, true, { pago: pago.id }, pago.date_approved ? new Date(pago.date_approved) : undefined);
     } else if (pago.status === "rejected") {
-      await aplicarResultadoPago(tenant.id, false, { pago: pago.id });
+      await aplicarResultadoPago(tenant.id, paymentPreapprovalId, false, { pago: pago.id });
     }
   }
 }
