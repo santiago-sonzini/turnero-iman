@@ -3,19 +3,45 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
-import { getUser } from '@/server/users';
-import { db, DEMO_MODE, systemDb } from '@/server/db';
+import { DEMO_MODE, systemDb } from '@/server/db';
 import { createClientServer } from '@/lib/user';
 import { trackFor } from '@/server/track';
 import { ensureUniqueSlug } from '@/lib/slug';
+import { z } from 'zod';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
-export async function login(values: any) {
+const credentialsSchema = z.object({ email: z.string().trim().email().max(254), password: z.string().min(8).max(200) });
+
+async function ensureTenantForUser(user: SupabaseUser, fallbackBusiness?: string) {
+  const existing = await systemDb.user.findUnique({ where: { id: user.id }, include: { tenant: true } });
+  if (existing) return existing.tenant;
+  const business = String(user.user_metadata?.name ?? fallbackBusiness ?? "Mi negocio").trim().slice(0, 80) || "Mi negocio";
+  const slug = await slugDe(business);
+  const tenant = await systemDb.$transaction(async (tx) => {
+    const created = await tx.tenant.create({
+      data: { name: business, slug, planStatus: "ONBOARDING", onboardingStep: "negocio" },
+    });
+    await tx.user.create({
+      data: { id: user.id, email: user.email ?? "", name: business, role: "ADMIN", tenantId: created.id },
+    });
+    await tx.businessProfile.create({
+      data: { name: business, tenantId: created.id, notifyOnBooking: true, notifyEmail: user.email ?? null },
+    });
+    return created;
+  });
+  await trackFor(tenant.id, "cuenta_creada", { email: user.email });
+  return tenant;
+}
+
+export async function login(values: { email: string; password: string }) {
   // Modo demo: sin Supabase configurado no hay login real.
-  if (DEMO_MODE) redirect('/dashboard')
+  if (DEMO_MODE) redirect('/app')
+  const parsed = credentialsSchema.safeParse(values);
+  if (!parsed.success) return { status: 400, message: "Revisá el email y la clave." };
   const supabase = await createClientServer()
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: values.email,
-    password: values.password,
+    email: parsed.data.email,
+    password: parsed.data.password,
   })
 
   if (error) {
@@ -23,16 +49,8 @@ export async function login(values: any) {
   }
 
   if (data) {
-    const res = await getUser(data.user.id)
-    if (res.status === 200) {
-      // Dueño de negocio: si dejó el onboarding a la mitad, retoma donde estaba.
-      const tenant = await systemDb.tenant.findUnique({
-        where: { id: res.data.tenantId },
-      })
-      redirect(tenant?.planStatus === "ONBOARDING" ? "/onboarding" : `/${tenant?.slug}`)
-    } else {
-      return { status: 401, message: "Error al recuperar usuario" }
-    }
+    const tenant = await ensureTenantForUser(data.user)
+    redirect(tenant.planStatus === "ONBOARDING" ? "/onboarding" : `/${tenant.slug}`)
   }
 
   redirect('/')
@@ -55,13 +73,15 @@ export async function signup(values: {
   password: string
   negocio: string
 }) {
-  if (DEMO_MODE) redirect('/dashboard')
+  if (DEMO_MODE) redirect('/app')
+  const parsed = credentialsSchema.extend({ negocio: z.string().trim().min(2).max(80) }).safeParse(values);
+  if (!parsed.success) return { status: 400, message: "Revisá el nombre, el email y la clave." };
   const supabase = await createClientServer()
   const { data, error } = await supabase.auth.signUp({
-    email: values.email,
-    password: values.password,
+    email: parsed.data.email,
+    password: parsed.data.password,
     options: {
-      data: { name: values.negocio },
+      data: { name: parsed.data.negocio },
     },
   })
 
@@ -72,34 +92,6 @@ export async function signup(values: {
     return { status: 401, message: "No se pudo crear la cuenta" }
   }
 
-  // Tenant + dueño + perfil + plantillas por defecto. systemDb: todavía no
-  // hay tenant al que scopear — es el único lugar legítimo para crear uno.
-  const existente = await systemDb.user.findUnique({ where: { id: data.user.id } })
-  if (!existente) {
-    const tenant = await systemDb.tenant.create({
-      data: {
-        name: values.negocio,
-        slug: await slugDe(values.negocio),
-        planStatus: "ONBOARDING",
-        onboardingStep: "negocio",
-      },
-    })
-    await systemDb.user.create({
-      data: {
-        id: data.user.id,
-        email: values.email,
-        name: values.negocio,
-        role: "ADMIN",
-        tenantId: tenant.id,
-      },
-    })
-    await systemDb.businessProfile.create({
-      // Avisos por email ON por defecto, al mail con el que se creó la cuenta.
-      data: { name: values.negocio, tenantId: tenant.id, notifyOnBooking: true, notifyEmail: values.email },
-    })
-    await trackFor(tenant.id, "cuenta_creada", { email: values.email })
-  }
-
   // Con confirmación de email activada en Supabase no hay sesión todavía.
   if (!data.session) {
     return {
@@ -108,6 +100,7 @@ export async function signup(values: {
     }
   }
 
+  await ensureTenantForUser(data.user, parsed.data.negocio)
   redirect('/onboarding')
 }
 

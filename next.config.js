@@ -5,25 +5,22 @@
 await import("./src/env.js");
 
 const config = {
-    experimental: {
-        // PGlite (modo demo) es WASM nativo de Node: no debe pasar por webpack
-        serverComponentsExternalPackages: ['@electric-sql/pglite', 'pglite-prisma-adapter'],
-    },
-    images: {
-        remotePatterns: [
-          {
-            protocol: 'https', // Or 'http' if necessary
-            hostname: 'ggpqgxddeayvmgmymrdc.supabase.co', // The domain of your external images
-            port: '', // Optional: specify a port if needed
-          },
-          // Add more objects for other allowed domains
-        ],
-      },
-      eslint: {
-        // Warning: This allows production builds to successfully complete even if
-        // your project has ESLint errors.
-        ignoreDuringBuilds: true,
-      },
+  poweredByHeader: false,
+  reactStrictMode: true,
+  async headers() {
+    const scriptSrc = process.env.NODE_ENV === "production"
+      ? "script-src 'self' 'unsafe-inline'"
+      : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+    const securityHeaders = [
+      { key: "Content-Security-Policy", value: `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://www.mercadopago.com https://www.mercadopago.com.ar; object-src 'none'` },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "X-Frame-Options", value: "DENY" },
+      { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+      ...(process.env.NODE_ENV === "production" ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }] : []),
+    ];
+    return [{ source: "/:path*", headers: securityHeaders }];
+  },
 };
 
 export default config;

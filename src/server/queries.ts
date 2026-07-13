@@ -13,6 +13,14 @@ export function tenantRouteMeta(tenantId: string) {
   return systemDb.tenant.findUnique({ where: { id: tenantId }, select: { slug: true, planStatus: true } });
 }
 
+/** Datos mínimos para metadata de la página pública, nunca datos de billing. */
+export function publicBusinessMeta(slug: string) {
+  return systemDb.tenant.findUnique({
+    where: { slug },
+    select: { slug: true, name: true, planStatus: true, profile: { select: { name: true, description: true } } },
+  });
+}
+
 /** Perfil + servicios del negocio actual (para precargar el onboarding). */
 export function onboardingInitialData() {
   return Promise.all([

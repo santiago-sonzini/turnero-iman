@@ -26,6 +26,7 @@ export function verificarFirma(params: {
   xRequestId: string | null;
   dataId: string | null;
   secreto: string;
+  nowMs?: number;
 }): boolean {
   const { xSignature, xRequestId, dataId, secreto } = params;
   if (!xSignature) return false;
@@ -38,6 +39,10 @@ export function verificarFirma(params: {
   const ts = partes.get("ts");
   const v1 = partes.get("v1");
   if (!ts || !v1) return false;
+  const rawTimestamp = Number(ts);
+  if (!Number.isFinite(rawTimestamp)) return false;
+  const timestampMs = rawTimestamp > 1_000_000_000_000 ? rawTimestamp : rawTimestamp * 1_000;
+  if (Math.abs((params.nowMs ?? Date.now()) - timestampMs) > 10 * 60_000) return false;
 
   let manifest = "";
   if (dataId) manifest += `id:${dataId.toLowerCase()};`;
@@ -67,7 +72,8 @@ async function tenantDePreapproval(pre: MpPreapproval): Promise<Tenant | null> {
   // Plan compartido: el preapproval_plan_id NO distingue tenants (es el mismo
   // para todos los del tier), así que el fallback es el email del pagador.
   if (pre.payer_email) {
-    return systemDb.tenant.findFirst({ where: { mpPayerEmail: pre.payer_email } });
+    const matches = await systemDb.tenant.findMany({ where: { mpPayerEmail: pre.payer_email }, take: 2 });
+    return matches.length === 1 ? matches[0]! : null;
   }
   return null;
 }
@@ -134,7 +140,7 @@ export async function sincronizarPreapproval(pre: MpPreapproval, tenantIdHint?: 
       data.onboardingStep = "listo";
       if (tenant.planStatus !== "ACTIVE" && tenant.planStatus !== "TRIALING") {
         await trackFor(tenant.id, "suscripcion_autorizada", { preapproval: pre.id });
-        void enviarBienvenida(tenant); // primer alta: email de bienvenida (best-effort)
+        await enviarBienvenida(tenant);
       }
       break;
     case "paused":
@@ -165,9 +171,10 @@ export async function sincronizarPreapproval(pre: MpPreapproval, tenantIdHint?: 
 async function aplicarResultadoPago(
   tenantId: string,
   aprobado: boolean,
-  props: Record<string, unknown>
+  props: Record<string, unknown>,
+  occurredAt?: Date,
 ): Promise<void> {
-  const ahora = new Date();
+  const ahora = occurredAt && !Number.isNaN(occurredAt.getTime()) ? occurredAt : new Date();
   if (aprobado) {
     const tenant = await systemDb.tenant.findUnique({ where: { id: tenantId } });
     // Un pago/webhook demorado no debe deshacer una baja solicitada. Guardamos
@@ -216,7 +223,8 @@ export async function procesarNotificacion(
 
     const estadoPago = cuota.payment?.status ?? cuota.status;
     if (estadoPago === "approved" || estadoPago === "processed") {
-      await aplicarResultadoPago(tenant.id, true, { cuota: cuota.id });
+      const paidAt = cuota.payment?.date_approved ? new Date(cuota.payment.date_approved) : undefined;
+      await aplicarResultadoPago(tenant.id, true, { cuota: cuota.id }, paidAt);
     } else if (estadoPago === "rejected") {
       await aplicarResultadoPago(tenant.id, false, { cuota: cuota.id });
     }
@@ -233,7 +241,7 @@ export async function procesarNotificacion(
       (await systemDb.tenant.findUnique({ where: { mpPreapprovalId: ref } }));
     if (!tenant) return;
     if (pago.status === "approved") {
-      await aplicarResultadoPago(tenant.id, true, { pago: pago.id });
+      await aplicarResultadoPago(tenant.id, true, { pago: pago.id }, pago.date_approved ? new Date(pago.date_approved) : undefined);
     } else if (pago.status === "rejected") {
       await aplicarResultadoPago(tenant.id, false, { pago: pago.id });
     }

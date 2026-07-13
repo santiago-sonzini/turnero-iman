@@ -7,21 +7,21 @@ export const env = createEnv({
    * isn't built with invalid env vars.
    */
   server: {
-    // Sin DATABASE_URL la app corre en MODO DEMO: Postgres embebido (PGlite)
-    // con datos de una distribuidora ficticia. Ver src/server/db.ts.
-    DATABASE_URL: z.string().url().optional(),
+    DATABASE_URL: z.string().url(),
+    DIRECT_URL: z.string().url(),
     SUPABASE_URL: z.string().url().optional(),
     SUPABASE_ANON_KEY: z.string().optional(),
-    // Servidor opcional de WhatsApp (open-wa, ver wa-server/). Si está seteado,
+    // Servidor opcional de WhatsApp Web (ver wa-server/). Si está seteado,
     // la app puede mandar mensajes directo además de abrir wa.me.
     WA_SERVER_URL: z.string().url().optional(),
     WA_SERVER_TOKEN: z.string().optional(),
     // SMTP opcional para la pestaña de Email (sin esto, queda el mailto:)
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
-    // "1" = demo efímera: PGlite en MEMORIA (deploy por link); sin persistencia.
-    // En Vercel se activa solo. Ver src/server/demo/bootstrap.ts.
-    DEMO_EPHEMERAL: z.string().optional(),
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+    SMTP_FROM: z.string().email().optional(),
+    SMTP_FROM_NAME: z.string().max(100).optional(),
     // ── Mercado Pago Suscripciones (preapproval) ──────────────────────────
     // Access token del vendedor. SANDBOX primero: usar el token de PRODUCCIÓN
     // (APP_USR-...) de una CUENTA DE PRUEBA vendedor — las credenciales
@@ -29,6 +29,7 @@ export const env = createEnv({
     MP_ACCESS_TOKEN: z.string().optional(),
     // "Firma secreta" del panel de Webhooks de MP: valida x-signature.
     MP_WEBHOOK_SECRET: z.string().optional(),
+    RATE_LIMIT_SALT: z.string().min(16).optional(),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
@@ -51,6 +52,7 @@ export const env = createEnv({
    */
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
+    DIRECT_URL: process.env.DIRECT_URL,
     NODE_ENV: process.env.NODE_ENV,
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
@@ -58,9 +60,13 @@ export const env = createEnv({
     WA_SERVER_TOKEN: process.env.WA_SERVER_TOKEN,
     SMTP_USER: process.env.SMTP_USER,
     SMTP_PASS: process.env.SMTP_PASS,
-    DEMO_EPHEMERAL: process.env.DEMO_EPHEMERAL,
+    SMTP_HOST: process.env.SMTP_HOST,
+    SMTP_PORT: process.env.SMTP_PORT,
+    SMTP_FROM: process.env.SMTP_FROM,
+    SMTP_FROM_NAME: process.env.SMTP_FROM_NAME,
     MP_ACCESS_TOKEN: process.env.MP_ACCESS_TOKEN,
     MP_WEBHOOK_SECRET: process.env.MP_WEBHOOK_SECRET,
+    RATE_LIMIT_SALT: process.env.RATE_LIMIT_SALT,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   },
   /**

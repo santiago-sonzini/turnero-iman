@@ -3,9 +3,13 @@
 // con los eventos: subscription_preapproval, subscription_authorized_payment,
 // payment. La "firma secreta" del panel va en MP_WEBHOOK_SECRET.
 import { NextResponse, type NextRequest } from "next/server";
+import { createHash } from "node:crypto";
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
 
 import { env } from "@/env";
 import { procesarNotificacion, verificarFirma } from "@/server/mp/webhook";
+import { systemDb } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
@@ -29,18 +33,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "firma inválida" }, { status: 401 });
   }
 
-  let body: any = {};
+  let rawBody: unknown = {};
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     /* algunos pings llegan sin body */
   }
 
-  const tipo: string =
-    body?.type ?? body?.topic ?? req.nextUrl.searchParams.get("type") ?? "";
-  const dataId: string = String(body?.data?.id ?? dataIdQuery ?? "");
+  const parsed = z.object({
+    type: z.string().optional(),
+    topic: z.string().optional(),
+    data: z.object({ id: z.union([z.string(), z.number()]) }).optional(),
+  }).passthrough().safeParse(rawBody);
+  const body = parsed.success ? parsed.data : {};
+  const tipo = body.type ?? body.topic ?? req.nextUrl.searchParams.get("type") ?? "";
+  const bodyDataId = body.data?.id === undefined ? "" : String(body.data.id);
+  const dataId = bodyDataId || dataIdQuery || "";
+
+  // La firma ata data.id de la query. El body no puede cambiar el recurso que
+  // se procesa conservando una firma válida capturada de otro evento.
+  if (bodyDataId && dataIdQuery && bodyDataId !== dataIdQuery) {
+    return NextResponse.json({ error: "data.id inconsistente" }, { status: 400 });
+  }
 
   if (!tipo || !dataId) return NextResponse.json({ ok: true });
+
+  const requestId = req.headers.get("x-request-id") ?? "";
+  const eventId = createHash("sha256").update(`${requestId}:${tipo}:${dataId}`).digest("hex");
+  const existing = await systemDb.webhookEvent.findUnique({ where: { id: eventId } });
+  if (existing?.processedAt) return NextResponse.json({ ok: true, duplicate: true });
+  if (existing && existing.createdAt > new Date(Date.now() - 5 * 60_000)) {
+    return NextResponse.json({ ok: true, processing: true });
+  }
+  if (!existing) {
+    try {
+      await systemDb.webhookEvent.create({ data: { id: eventId, type: tipo, dataId } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return NextResponse.json({ ok: true, processing: true });
+      }
+      throw error;
+    }
+  }
 
   try {
     await procesarNotificacion(tipo, dataId);
@@ -49,6 +83,8 @@ export async function POST(req: NextRequest) {
     console.error("[mp] error procesando webhook", tipo, dataId, e);
     return NextResponse.json({ error: "error interno" }, { status: 500 });
   }
+
+  await systemDb.webhookEvent.update({ where: { id: eventId }, data: { processedAt: new Date() } });
 
   return NextResponse.json({ ok: true });
 }

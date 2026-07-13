@@ -1,4 +1,6 @@
 "use server";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { cookies } from "next/headers";
 // Ciclo de vida de la suscripción del tenant (Mercado Pago preapproval).
 // La verdad del estado la escriben los webhooks (src/server/mp/webhook.ts);
 // acá solo se crea/cambia/cancela y se refleja lo verificado contra la API.
@@ -19,6 +21,15 @@ import { track } from "@/server/track";
 import getUserServer from "@/lib/user";
 import type { PlanTier } from "@prisma/client";
 
+const MP_CHECKOUT_COOKIE = "iman_mp_checkout";
+const checkoutHash = (token: string) => createHash("sha256").update(token).digest("hex");
+const checkoutTokenMatches = (token: string, expected: string | null) => {
+  if (!expected || token.length < 20 || token.length > 128) return false;
+  const actual = Buffer.from(checkoutHash(token), "hex");
+  const wanted = Buffer.from(expected, "hex");
+  return actual.length === wanted.length && timingSafeEqual(Uint8Array.from(actual), Uint8Array.from(wanted));
+};
+
 export type ResultadoPlan =
   | { ok: true; initPoint: string | null }
   | { ok: false; error: string };
@@ -34,11 +45,12 @@ export async function elegirPlan(
   opciones?: { conPago?: boolean }
 ): Promise<ResultadoPlan> {
   const tenant = await getCurrentTenant();
+  if (tenant.planStatus !== "ONBOARDING") {
+    return { ok: false, error: "La prueba ya fue utilizada. Cambiá de plan desde Suscripción o reactivá el pago." };
+  }
   const ahora = new Date();
   const finTrial =
-    tenant.trialEndsAt && tenant.trialEndsAt > ahora
-      ? tenant.trialEndsAt
-      : new Date(ahora.getTime() + DIAS_TRIAL * 86_400_000);
+    tenant.trialEndsAt ?? new Date(ahora.getTime() + DIAS_TRIAL * 86_400_000);
 
   // "Con pago" real: hay que dejar el débito autorizado en MP. En ese caso NO
   // habilitamos el acceso todavía: el tenant sigue en ONBOARDING hasta que MP
@@ -138,9 +150,23 @@ async function suscribirTenant(tier: PlanTier): Promise<ResultadoPlan> {
     // Guardamos el email del dueño como fallback de mapeo (por si MP no propaga
     // el external_reference al preapproval creado desde el checkout del plan).
     const email = tenant.mpPayerEmail ?? (await getUserServer())?.user.email ?? null;
+    const checkoutToken = randomBytes(32).toString("base64url");
+    const checkoutExpiresAt = new Date(Date.now() + 60 * 60_000);
     if (email && email !== tenant.mpPayerEmail) {
       await db.tenant.update({ where: { id: tenant.id }, data: { mpPayerEmail: email } });
     }
+    await db.tenant.update({
+      where: { id: tenant.id },
+      data: { mpCheckoutTokenHash: checkoutHash(checkoutToken), mpCheckoutExpiresAt: checkoutExpiresAt },
+    });
+    const cookieStore = await cookies();
+    cookieStore.set(MP_CHECKOUT_COOKIE, checkoutToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/suscripcion/retorno",
+      expires: checkoutExpiresAt,
+    });
     await track("suscripcion_iniciada", { plan: tier });
     const sep = initPoint.includes("?") ? "&" : "?";
     return { ok: true, initPoint: `${initPoint}${sep}external_reference=${encodeURIComponent(tenant.id)}` };
@@ -278,7 +304,11 @@ export async function confirmarRetorno(preapprovalId: string): Promise<boolean> 
     where: { mpPreapprovalId: pre.id, NOT: { id: tenant.id } },
     select: { id: true },
   });
-  const esDeTenant = pre.external_reference === tenant.id || (esNuestroPlan && !deOtro);
+  const cookieStore = await cookies();
+  const checkoutToken = cookieStore.get(MP_CHECKOUT_COOKIE)?.value ?? "";
+  const checkoutValido = !!tenant.mpCheckoutExpiresAt && tenant.mpCheckoutExpiresAt > new Date()
+    && checkoutTokenMatches(checkoutToken, tenant.mpCheckoutTokenHash);
+  const esDeTenant = pre.external_reference === tenant.id || (esNuestroPlan && !deOtro && checkoutValido);
   if (!esDeTenant) {
     console.warn("[mp] retorno con preapproval no vinculable", preapprovalId, tenant.id);
     return false;
@@ -286,5 +316,16 @@ export async function confirmarRetorno(preapprovalId: string): Promise<boolean> 
   // Fijamos el vínculo en el tenant de la sesión (los webhooks siguientes ya lo
   // encuentran por mpPreapprovalId). Éxito real = MP autorizó el débito.
   await sincronizarPreapproval(pre, tenant.id);
+  await db.tenant.update({
+    where: { id: tenant.id },
+    data: { mpCheckoutTokenHash: null, mpCheckoutExpiresAt: null },
+  });
+  cookieStore.set(MP_CHECKOUT_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/suscripcion/retorno",
+    maxAge: 0,
+  });
   return pre.status === "authorized";
 }

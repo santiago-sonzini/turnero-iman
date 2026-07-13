@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Eye, EyeOff, LockKeyhole, Mail, Scissors, Store } from "lucide-react";
 import { login, signup } from "@/app/actions/auth";
-import { trackFbq } from "@/components/analytics/meta-pixel";
 import { MagnetLogo } from "./magnet-logo";
 
 type Mode = "signin" | "signup";
@@ -32,9 +31,6 @@ export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
         ? await signup({ email, password, negocio: String(formData.get("negocio") ?? "") })
         : await login({ email, password });
       if (result?.status === 200) {
-        // Alta creada (con confirmación por email, signup devuelve 200 y se queda
-        // en la pantalla). Conversión de registro para el píxel de Meta.
-        if (mode === "signup") trackFbq("CompleteRegistration");
         setNotice(result.message);
       }
       else if (result) setError(result.message);
@@ -83,7 +79,7 @@ export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
             {notice && <p className="auth-message success">{notice}</p>}
             <button className="auth-submit" disabled={pending}>{pending ? <><span className="auth-spinner" /> Un segundo…</> : mode === "signup" ? <>Crear mi cuenta <Scissors /></> : "Entrar a Imán"}</button>
           </form>
-          <p className="auth-fineprint">{mode === "signup" ? "Al crear tu cuenta aceptás usar Imán para gestionar tu negocio. Cancelás cuando quieras." : "¿Todavía no tenés cuenta? "}{mode === "signin" && <button onClick={() => switchMode("signup")}>Probalo gratis</button>}</p>
+          <p className="auth-fineprint">{mode === "signup" ? <>Al crear tu cuenta aceptás la <Link href="/privacidad">política de privacidad</Link>. Cancelás cuando quieras.</> : "¿Todavía no tenés cuenta? "}{mode === "signin" && <button onClick={() => switchMode("signup")}>Probalo gratis</button>}</p>
         </div>
       </section>
     </main>

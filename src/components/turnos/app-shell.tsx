@@ -1,22 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, LogOut, MessageCircle, Plus, Scissors, Settings, Share2, Sparkles, Trash2, Users, X } from "lucide-react";
 import { acceptWhatsappRisk, createPromotion, crearTurnoManual, deleteStaff, ownerAvailability, queueGapFill, saveBookingSettings, saveLogo, saveNotifications, saveProfile, saveService, saveStaff, saveTheme, setAppointmentStatus } from "@/app/actions/turnos";
 import { signOut } from "@/app/actions/auth";
 import { instagramHandle } from "@/lib/instagram";
+import { whatsappUrl } from "@/lib/phone";
+import { dateKeyAR, minutesAR, timeAR } from "@/lib/format";
+import { weekdayOf } from "@/lib/availability";
 import { MagnetLogo } from "./magnet-logo";
 import Image from "next/image";
 
 type Screen = "agenda" | "clientes" | "promos" | "servicios" | "ajustes";
 const money = (cents: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 0 }).format(cents / 100);
-const dayKey = (d: Date) => d.toISOString().slice(0, 10);
-const localDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
-const wa = (phone: string, text: string) => `https://wa.me/54${phone.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`;
+const dayKey = dateKeyAR;
+const localDay = dateKeyAR;
+const wa = (phone: string | null | undefined, text: string) => whatsappUrl(phone, text);
 const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-const timeAt = (d: Date) => d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false });
-const minutesOf = (d: Date) => d.getHours() * 60 + d.getMinutes();
+const timeAt = timeAR;
+const minutesOf = minutesAR;
 const initials = (name: string) => name.split(" ").map((x) => x[0]).slice(0, 2).join("").toUpperCase();
 
 export function AppShell({ data }: { data: any }) {
@@ -68,7 +72,7 @@ export function AppShell({ data }: { data: any }) {
         {sheet.type === "profile" && <ProfileSheet close={close} profile={data.profile} />}
         {sheet.type === "whatsapp" && <WhatsappSheet close={close} qr={data.whatsapp?.qrCode} eligible={data.tenant.plan === "TURNOS_AUTO"} accepted={!!data.tenant.whatsappRiskAcceptedAt} />}
         {sheet.type === "booking" && <BookingSettingsSheet close={close} tenant={data.tenant} profile={data.profile} />}
-        {sheet.type === "manual" && <ManualSheet close={close} services={data.services} clients={data.clients} staff={data.staff ?? []} hours={data.workingHours ?? []} />}
+        {sheet.type === "manual" && <ManualSheet close={close} services={data.services} clients={data.clients} staff={data.staff ?? []} agendaDate={date} />}
         {sheet.type === "share" && <ShareSheet close={close} slug={data.tenant.slug} name={data.profile?.name ?? data.tenant.name} staff={data.staff ?? []} />}
         {sheet.type === "notif" && <NotificationsSheet close={close} profile={data.profile} />}
         {sheet.type === "staff" && <StaffSheet close={close} staff={data.staff ?? []} services={data.services ?? []} />}
@@ -79,7 +83,7 @@ export function AppShell({ data }: { data: any }) {
 }
 
 function Tab({ active, icon, label, onClick }: any) {
-  return <button className={active ? "activo" : ""} onClick={onClick}>{icon}<span>{label}</span><i className="pt" /></button>;
+  return <button aria-current={active ? "page" : undefined} className={active ? "activo" : ""} onClick={onClick}>{icon}<span>{label}</span><i className="pt" /></button>;
 }
 
 // "?" que lleva a la sección correspondiente de la guía (/ayuda#seccion).
@@ -90,7 +94,7 @@ function HelpDot({ to }: { to: string }) {
 /* ---------- agenda -------------------------------------------------------- */
 
 function buildDay(date: Date, appointments: any[], hours: any[]) {
-  const weekday = date.getDay();
+  const weekday = weekdayOf(localDay(date));
   const dayHours = hours.filter((h: any) => h.weekday === weekday && h.active);
   const items = appointments.filter((a: any) => localDay(a.startsAt) === localDay(date) && a.status !== "CANCELADO");
   const rows: any[] = [];
@@ -139,7 +143,7 @@ function Agenda({ date, setDate, view, setView, appointments, hours, clients, st
     </div>
     <div className="seg-fila">
       <div className="seg" role="tablist" aria-label="Vista">
-        {(["dia", "semana", "mes"] as const).map((v) => <button key={v} className={view === v ? "on" : ""} onClick={() => setView(v)}>{v === "dia" ? "Día" : v === "semana" ? "Semana" : "Mes"}</button>)}
+        {(["dia", "semana", "mes"] as const).map((v) => <button role="tab" aria-selected={view === v} key={v} className={view === v ? "on" : ""} onClick={() => setView(v)}>{v === "dia" ? "Día" : v === "semana" ? "Semana" : "Mes"}</button>)}
       </div>
     </div>
     {staff.length > 0 && <div className="agenda-filtro">
@@ -150,7 +154,7 @@ function Agenda({ date, setDate, view, setView, appointments, hours, clients, st
     {view === "dia" && <>
       <div className="semana-strip">
         {days.map((d) => {
-          const closed = !hours.some((h: any) => h.weekday === d.getDay() && h.active);
+          const closed = !hours.some((h: any) => h.weekday === weekdayOf(localDay(d)) && h.active);
           const count = shown.filter((a: any) => localDay(a.startsAt) === localDay(d) && a.status !== "CANCELADO").length;
           return <button key={dayKey(d)} className={`dia-mini ${localDay(d) === localDay(date) ? "sel" : ""} ${localDay(d) === localDay(new Date()) ? "hoy" : ""} ${closed ? "cerrado" : ""}`} onClick={() => setDate(d)}>
             <div className="dw">{d.toLocaleDateString("es-AR", { weekday: "short" }).slice(0, 2)}</div>
@@ -179,7 +183,7 @@ function Timeline({ date, rows, dayHours, clients, onSheet }: any) {
   const today = localDay(date) === localDay(now);
   const past = localDay(date) < localDay(now);
   const futureGap = rows.find((r: any) => r.type === "gap" && !past && (!today || r.end > nowMin));
-  const due = clients.filter((c: any) => recurrence(c).tone !== "aldia").length;
+  const due = clients.filter((c: any) => c.phone && recurrence(c).tone !== "aldia").length;
   return <div className="tl">
     {rows.map((row: any, index: number) => {
       if (row.type === "appointment") {
@@ -237,7 +241,7 @@ function WeekGrid({ days, appointments, hours, onSelect, onDay }: any) {
     {days.map((d: Date) => <button key={`c${dayKey(d)}`} className={`sg-cab ${localDay(d) === localDay(new Date()) ? "hoy" : ""}`} onClick={() => onDay(d)}>{d.toLocaleDateString("es-AR", { weekday: "short" }).slice(0, 2)}<b>{d.getDate()}</b></button>)}
     <div className="sg-gut">{marks.map((h) => <i key={h} style={{ top: `${((h * 60 - START) / SPAN) * 100}%` }}>{h}</i>)}</div>
     {days.map((d: Date) => {
-      const closed = !hours.some((h: any) => h.weekday === d.getDay() && h.active);
+      const closed = !hours.some((h: any) => h.weekday === weekdayOf(localDay(d)) && h.active);
       if (closed) return <div key={dayKey(d)} className="sg-col cerrado">Cerrado</div>;
       const dayItems = appointments.filter((a: any) => localDay(a.startsAt) === localDay(d) && a.status !== "CANCELADO");
       return <div key={dayKey(d)} className={`sg-col ${localDay(d) === localDay(new Date()) ? "hoy" : ""}`}>
@@ -261,7 +265,7 @@ function MonthGrid({ date, appointments, hours, onSelect }: any) {
       {["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"].map((x) => <span className="mes-cab" key={x}>{x}</span>)}
       {days.map((d) => {
         const items = appointments.filter((a: any) => localDay(a.startsAt) === localDay(d) && a.status !== "CANCELADO");
-        const open = openMinutes(d.getDay());
+        const open = openMinutes(weekdayOf(localDay(d)));
         // El día se va "llenando" según cuánto de la jornada está ocupada.
         const booked = items.reduce((acc: number, a: any) => acc + (a.endsAt.getTime() - a.startsAt.getTime()) / 60000, 0);
         const pct = open ? Math.min(100, Math.round((booked / open) * 100)) : 0;
@@ -292,7 +296,7 @@ function Clients({ clients, profile }: any) {
   const [query, setQuery] = useState("");
   const order: Record<string, number> = { vencida: 0, letoca: 1, aldia: 2 };
   const list = clients
-    .filter((c: any) => `${c.name}${c.phone}`.toLowerCase().includes(query.toLowerCase()))
+    .filter((c: any) => `${c.name}${c.phone ?? ""}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a: any, b: any) => order[recurrence(a).tone]! - order[recurrence(b).tone]!);
   return <>
     <div className="seccion-tit"><h2>Clientes</h2><span className="chip">{clients.length}</span></div>
@@ -304,10 +308,10 @@ function Clients({ clients, profile }: any) {
         <span className="ava">{initials(c.name)}</span>
         <div className="info">
           <span className="nom">{c.name}</span>
-          <span className="sub">{c.phone}</span>
+          <span className="sub">{c.phone || "Sin WhatsApp"}</span>
           <span className={`sem ${r.tone}`}><i className="pto" />{r.label}</span>
         </div>
-        <a className="wa-redondo" href={wa(c.phone, `Hola ${c.name.split(" ")[0]} 👋 ¿Querés reservar tu próximo turno en ${profile.name}?`)} target="_blank" aria-label={`WhatsApp a ${c.name}`}><MessageCircle /></a>
+        {c.phone && <a className="wa-redondo" href={wa(c.phone, `Hola ${c.name.split(" ")[0]} 👋 ¿Querés reservar tu próximo turno en ${profile.name}?`)} target="_blank" rel="noopener noreferrer" aria-label={`WhatsApp a ${c.name}`}><MessageCircle /></a>}
       </article>;
     })}
   </>;
@@ -323,7 +327,7 @@ function Promos({ promotions, slug, onCreate }: any) {
     {promotions.map((p: any) => <article className="tarjeta-fila" key={p.id}>
       <span className="emo">{p.kind === "ADD_ON" ? "🎁" : "⚡"}</span>
       <div className="info"><span className="nom">{p.name}</span><span className="sub">{p.message}</span><span className="sub">Vence {new Date(p.expiresAt).toLocaleDateString("es-AR")}</span></div>
-      <a className="icon-btn" target="_blank" href={`/${slug}/turnos?promo=${p.token}`} aria-label="Abrir link de la promo"><ExternalLink /></a>
+      <a className="icon-btn" target="_blank" rel="noopener noreferrer" href={`/${slug}/turnos?promo=${p.token}`} aria-label="Abrir link de la promo"><ExternalLink /></a>
     </article>)}
   </>;
 }
@@ -349,7 +353,6 @@ function Services({ services, hours, onCreate }: any) {
 function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff, onTheme }: any) {
   const auto = data.tenant.plan === "TURNOS_AUTO" || (data.tenant.addons ?? []).includes("multi_staff");
   const temaLabel: Record<string, string> = { clasico: "Clásico", profesional: "Profesional", noche: "Noche" };
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [leaving, startLeaving] = useTransition();
   const health = data.whatsapp?.health ?? "DISCONNECTED";
@@ -404,22 +407,27 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
       <div className="info"><span className="nom">Tema visual</span><span className="sub">{temaLabel[data.profile.theme ?? "clasico"] ?? "Clásico"} · el estilo de tu página</span></div>
       <ChevronRight />
     </button>}
-    {!auto && <a className="tarjeta-fila" href="/suscripcion">
+    {auto && <button className="tarjeta-fila" onClick={onWhatsapp}>
+      <span className="emo">🤖</span>
+      <div className="info"><span className="nom">WhatsApp automático</span><span className="sub">{health === "CONNECTED" ? "Conectado" : health === "QR_PENDING" ? "Esperando vinculación" : "Confirmaciones y recordatorios desde tu número"}</span></div>
+      <ChevronRight />
+    </button>}
+    {!auto && <Link className="tarjeta-fila" href="/suscripcion">
       <span className="emo">✨</span>
       <div className="info"><span className="nom">Subí a Turnos Pro</span><span className="sub">Hasta 3 profesionales y temas visuales para tu página</span></div>
       <ChevronRight />
-    </a>}
-    <a className="tarjeta-fila" href="/suscripcion">
+    </Link>}
+    <Link className="tarjeta-fila" href="/suscripcion">
       <span className="emo">💳</span>
       <div className="info"><span className="nom">Suscripción</span><span className="sub">Plan, débito automático y facturación</span></div>
       <ChevronRight />
-    </a>
+    </Link>
     <div className="seccion-tit"><h2>Ayuda</h2></div>
-    <a className="tarjeta-fila" href="/ayuda">
+    <Link className="tarjeta-fila" href="/ayuda">
       <span className="emo">📖</span>
       <div className="info"><span className="nom">Guía de uso</span><span className="sub">Cómo funciona todo, sección por sección</span></div>
       <ChevronRight />
-    </a>
+    </Link>
     <a className="tarjeta-fila" href="https://wa.me/5493534797679?text=Hola!%20Necesito%20ayuda%20con%20Imán%20Turnos" target="_blank" rel="noopener noreferrer">
       <span className="emo">💬</span>
       <div className="info"><span className="nom">Contactanos</span><span className="sub">Escribinos por WhatsApp, te ayudamos</span></div>
@@ -435,16 +443,37 @@ function SettingsScreen({ data, onEdit, onWhatsapp, onBooking, onNotif, onStaff,
 
 function Sheet({ children, onClose }: { children: (close: () => void) => React.ReactNode; onClose: () => void }) {
   const [open, setOpen] = useState(false);
+  const sheetRef = useRef<HTMLElement>(null);
+  const close = useCallback(() => { setOpen(false); window.setTimeout(onClose, 300); }, [onClose]);
   useEffect(() => {
-    const id = requestAnimationFrame(() => setOpen(true));
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const id = requestAnimationFrame(() => {
+      setOpen(true);
+      sheetRef.current?.querySelector<HTMLElement>("button, a, input, select, textarea, [tabindex]:not([tabindex='-1'])")?.focus();
+    });
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { cancelAnimationFrame(id); document.body.style.overflow = prev; };
-  }, []);
-  const close = () => { setOpen(false); window.setTimeout(onClose, 300); };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); close(); return; }
+      if (event.key !== "Tab" || !sheetRef.current) return;
+      const focusable = [...sheetRef.current.querySelectorAll<HTMLElement>("button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])")];
+      if (!focusable.length) return;
+      const first = focusable[0]!;
+      const last = focusable.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      cancelAnimationFrame(id);
+      document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [close]);
   return <>
-    <div className={`sheet-bg ${open ? "abierto" : ""}`} onMouseDown={close} />
-    <aside role="dialog" aria-modal="true" className={`sheet ${open ? "abierto" : ""}`}>
+    <div aria-hidden="true" className={`sheet-bg ${open ? "abierto" : ""}`} onMouseDown={close} />
+    <aside ref={sheetRef} role="dialog" aria-modal="true" aria-label="Panel de edición" className={`sheet ${open ? "abierto" : ""}`}>
       <div className="handle" />
       {children(close)}
     </aside>
@@ -464,14 +493,14 @@ function GapSheet({ gap, clients, profile, slug, promotions, auto, close }: any)
   const step = Math.max(15, profile.slotStepMinutes || 15);
   // Rango que se OFRECE (no el hueco entero): por defecto una ventana corta al
   // inicio del hueco, editable, para no mandar "de 11:15 a 20:00".
-  const snap = (m: number) => Math.round(m / step) * step;
+  const snap = useCallback((m: number) => Math.round(m / step) * step, [step]);
   const [desde, setDesde] = useState<number>(snap(gap.start));
   const [hasta, setHasta] = useState<number>(Math.min(snap(gap.start) + Math.max(step, 60), gap.end));
-  const startOpts = useMemo(() => { const o: number[] = []; for (let m = snap(gap.start); m < gap.end; m += step) o.push(m); return o; }, [gap.start, gap.end, step]);
+  const startOpts = useMemo(() => { const o: number[] = []; for (let m = snap(gap.start); m < gap.end; m += step) o.push(m); return o; }, [gap.start, gap.end, step, snap]);
   const endOpts = useMemo(() => { const o: number[] = []; for (let m = desde + step; m <= gap.end; m += step) o.push(m); return o; }, [desde, gap.end, step]);
   const pickDesde = (m: number) => { setDesde(m); if (hasta <= m) setHasta(Math.min(m + step, gap.end)); };
 
-  const due = clients.filter((c: any) => recurrence(c).tone !== "aldia").slice(0, 5);
+  const due = clients.filter((c: any) => c.phone && recurrence(c).tone !== "aldia").slice(0, 5);
   const activePromos = (promotions ?? []).filter((p: any) => p.active && new Date(p.expiresAt) > new Date());
   // Sugerimos la promo más reciente por defecto; el dueño puede sacarla.
   const [promoSel, setPromoSel] = useState<string>(activePromos[0]?.token ?? "");
@@ -499,7 +528,7 @@ function GapSheet({ gap, clients, profile, slug, promotions, auto, close }: any)
       {due.map((c: any) => {
         const r = recurrence(c);
         const times = usualTimes(c);
-        return <a className="cli-fila" key={c.id} target="_blank" href={wa(c.phone, gapText(c.name))}>
+        return <a className="cli-fila" key={c.id} target="_blank" rel="noopener noreferrer" href={wa(c.phone, gapText(c.name))}>
           <span className="ava">{initials(c.name)}</span>
           <div className="info"><span className="nom">{c.name}</span><span className="por">{r.label}</span>{times.length > 0 && <span className="horarios">🕐 suele venir {times.join(" · ")}</span>}</div>
           <span className="wa-redondo"><MessageCircle /></span>
@@ -522,7 +551,7 @@ function AppointmentSheet({ appointment: a, close }: any) {
   return <>
     <SheetHead title={a.client.name} sub={<>{a.service.emoji} {a.service.name} · {a.startsAt.toLocaleDateString("es-AR", { weekday: "long", day: "numeric" })} · {timeAt(a.startsAt)} · {money(a.service.priceCents)}</>} onClose={close} />
     <div className="sheet-body">
-      <a className="btn btn-wa block" href={wa(a.client.phone, `Hola ${a.client.name.split(" ")[0]}, te escribo por tu turno de las ${timeAt(a.startsAt)}.`)} target="_blank"><MessageCircle /> Escribir por WhatsApp</a>
+      {a.client.phone && <a className="btn btn-wa block" href={wa(a.client.phone, `Hola ${a.client.name.split(" ")[0]}, te escribo por tu turno de las ${timeAt(a.startsAt)}.`)} target="_blank" rel="noopener noreferrer"><MessageCircle /> Escribir por WhatsApp</a>}
       <div className="acciones-turno" style={{ marginTop: 12 }}>
         <button className="btn" disabled={pending} onClick={() => run("ASISTIO")}>✓ Asistió</button>
         <button className="btn" disabled={pending} onClick={() => run("NO_VINO")}>No vino</button>
@@ -553,7 +582,7 @@ function ServiceSheet({ close }: any) {
 function PromoSheet({ services, close }: any) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [form, set] = useState({ serviceId: services[0]?.id, name: "Corte + regalo", addOnLabel: "Perfilado de cejas", message: "Reservá hoy y te sumamos un perfilado sin cargo.", expiresAt: new Date(Date.now() + 7 * 86400000) });
+  const [form, set] = useState(() => ({ serviceId: services[0]?.id, name: "Corte + regalo", addOnLabel: "Perfilado de cejas", message: "Reservá hoy y te sumamos un perfilado sin cargo.", expiresAt: new Date(Date.now() + 7 * 86400000) }));
   return <>
     <SheetHead title="Armá una promo" sub="3 toques: servicio, regalo y mensaje" onClose={close} help="promos" />
     <form className="sheet-body" onSubmit={(e) => { e.preventDefault(); start(async () => { await createPromotion(form); router.refresh(); close(); }); }}>
@@ -650,7 +679,7 @@ function WhatsappSheet({ eligible, accepted, qr, close }: any) {
   const [pending, start] = useTransition();
   if (!eligible) return <>
     <SheetHead title="Automatizá desde tu número" sub="Confirmaciones, recordatorios y recupero con ritmo humano" onClose={close} />
-    <div className="sheet-body"><a className="btn btn-acento block" href="/suscripcion">Subir a Turnos Pro</a></div>
+    <div className="sheet-body"><Link className="btn btn-acento block" href="/suscripcion">Subir a Turnos Pro</Link></div>
   </>;
   return <>
     <SheetHead title={accepted ? "Vinculá tu WhatsApp" : "Antes de activarlo"} sub="Turnos Pro · integración no oficial" onClose={close} />
@@ -660,7 +689,7 @@ function WhatsappSheet({ eligible, accepted, qr, close }: any) {
         <p>{qr ? "WhatsApp → Dispositivos vinculados → Vincular dispositivo." : "El worker está preparando el código de tu sesión aislada."}</p>
       </div> : <div className="riesgo">
         <b>Integración no oficial</b>
-        <p>Turnos Pro usa open-wa para enviar desde tu número. WhatsApp puede limitar o bloquear cuentas que usen automatizaciones. Usamos ritmo humano, límites y pausas, pero el riesgo no desaparece.</p>
+        <p>Turnos Pro usa WhatsApp Web para enviar desde tu número. WhatsApp puede limitar o bloquear cuentas que usen automatizaciones. Usamos ritmo humano, límites y pausas, pero el riesgo no desaparece.</p>
         <p>Si la sesión falla, Imán sigue funcionando y vuelve automáticamente a links wa.me.</p>
         <button className="btn btn-acento block" disabled={pending} onClick={() => start(async () => { await acceptWhatsappRisk(); router.refresh(); })}>{pending ? "Activando…" : "Entiendo el riesgo y acepto"}</button>
       </div>}
@@ -677,7 +706,7 @@ function PublicLink({ slug }: any) {
     navigator.clipboard.writeText(window.location.origin + path).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600); });
   };
   return <div className="link-card">
-    <a className="lk" href={path} target="_blank">{shown}</a>
+    <a className="lk" href={path} target="_blank" rel="noopener noreferrer">{shown}</a>
     <button className="btn sm" onClick={copy}>{copied ? <><Check /> Copiado</> : <><Copy /> Copiar</>}</button>
   </div>;
 }
@@ -738,21 +767,14 @@ function BookingSettingsSheet({ tenant, profile, close }: any) {
   </>;
 }
 
-function ManualSheet({ services, clients, staff = [], hours = [], close }: any) {
+function ManualSheet({ services, clients, staff = [], agendaDate, close }: any) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const activos = useMemo(() => services.filter((s: any) => s.active), [services]);
-  // Primer día abierto desde hoy (si hoy el negocio no atiende, no aparecía
-  // ningún horario y parecía que "no se puede elegir").
-  const openWeekdays = useMemo(() => new Set(hours.filter((h: any) => h.active !== false).map((h: any) => h.weekday)), [hours]);
-  const firstOpenDate = () => {
-    const d = new Date();
-    for (let i = 0; i < 14; i++) { if (!openWeekdays.size || openWeekdays.has(d.getDay())) return localDay(d); d.setDate(d.getDate() + 1); }
-    return localDay(new Date());
-  };
   const [serviceId, setServiceId] = useState(activos[0]?.id ?? "");
   const [staffId, setStaffId] = useState("");
-  const [date, setDate] = useState(firstOpenDate);
+  // Arranca en el día que estás mirando en la agenda.
+  const [date, setDate] = useState(() => localDay(agendaDate ? new Date(agendaDate) : new Date()));
   const [time, setTime] = useState("");
   const [slots, setSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -789,9 +811,9 @@ function ManualSheet({ services, clients, staff = [], hours = [], close }: any) 
     if (!serviceId) return setError("Elegí un servicio.");
     if (!time) return setError("Elegí un horario.");
     if (name.trim().length < 2) return setError("Poné el nombre del cliente.");
-    if (tel.replace(/\D/g, "").length < 6) return setError("Poné un WhatsApp válido.");
+    if (tel.trim() && tel.replace(/\D/g, "").length < 6) return setError("Ese WhatsApp no parece válido. Corregilo o dejalo vacío.");
     start(async () => {
-      const r = await crearTurnoManual({ serviceId, date, time, name, phone: tel, staffId: staffId || undefined });
+      const r = await crearTurnoManual({ serviceId, date, time, name, phone: tel || undefined, staffId: staffId || undefined });
       if (!r.ok) { setError(r.error); return; }
       router.refresh();
       close();
@@ -825,7 +847,7 @@ function ManualSheet({ services, clients, staff = [], hours = [], close }: any) 
         <input value={name} onChange={(e) => pickName(e.target.value)} placeholder="Nombre y apellido" list="clientes-manual" />
         <datalist id="clientes-manual">{clients.map((c: any) => <option key={c.id} value={c.name} />)}</datalist>
       </div>
-      <div className="campo"><span>WhatsApp</span><input inputMode="tel" value={tel} onChange={(e) => setTel(e.target.value)} placeholder="351 555 0194" /></div>
+      <div className="campo"><span>WhatsApp <em className="opt">opcional</em></span><input inputMode="tel" value={tel} onChange={(e) => setTel(e.target.value)} placeholder="351 555 0194" /></div>
       {error && <p className="campo-error">{error}</p>}
       <button className="btn btn-acento block" disabled={pending || !activos.length} onClick={submit}>{pending ? "Creando…" : "Crear turno"}</button>
     </div>

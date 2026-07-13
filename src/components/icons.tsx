@@ -1,4 +1,3 @@
-import { CubeIcon } from '@radix-ui/react-icons';
 import {
   AlertTriangle,
   ArrowRight,
@@ -21,8 +20,8 @@ import {
   LayoutDashboardIcon,
   Loader2,
   LogIn,
-  LucideIcon,
-  LucideProps,
+  type LucideIcon,
+  type LucideProps,
   Moon,
   MoreVertical,
   Pizza,

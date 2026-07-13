@@ -173,7 +173,7 @@ export type MpAuthorizedPayment = {
   id: number | string;
   preapproval_id?: string;
   status?: string; // scheduled | processed | recycling ...
-  payment?: { id: number; status: string; status_detail?: string };
+  payment?: { id: number; status: string; status_detail?: string; date_approved?: string };
   external_reference?: string;
 };
 
@@ -188,6 +188,7 @@ export type MpPayment = {
   status: string; // approved | rejected | pending | ...
   external_reference?: string;
   metadata?: { preapproval_id?: string };
+  date_approved?: string;
 };
 
 export async function obtenerPago(id: string): Promise<MpPayment> {

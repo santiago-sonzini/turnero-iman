@@ -53,11 +53,14 @@ export function computeSlots(params: {
   const lead = new Date((params.now ?? new Date()).getTime() + rules.bookingLeadMinutes * 60_000);
   const windows = busy.map((b) => ({ start: new Date(b.startsAt), end: new Date(b.endsAt) }));
   const slots: string[] = [];
+  const step = Math.max(1, Math.floor(rules.slotStepMinutes || 15));
+  const buffer = Math.max(0, Math.floor(rules.bufferMinutes || 0));
+  const occupiedMinutes = durationMinutes + buffer;
   for (const interval of intervals) {
-    for (let m = interval.startMinutes; m + durationMinutes <= interval.endMinutes; m += rules.slotStepMinutes) {
+    for (let m = interval.startMinutes; m + occupiedMinutes <= interval.endMinutes; m += step) {
       const startsAt = localDate(date, m);
       if (startsAt <= lead) continue;
-      const endsAt = new Date(startsAt.getTime() + (durationMinutes + rules.bufferMinutes) * 60_000);
+      const endsAt = new Date(startsAt.getTime() + occupiedMinutes * 60_000);
       const solapados = windows.filter((w) => startsAt < w.end && endsAt > w.start).length;
       if (solapados >= capacity) continue;
       slots.push(minutesLabel(m));

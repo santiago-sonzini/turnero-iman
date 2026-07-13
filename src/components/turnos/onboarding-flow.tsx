@@ -5,6 +5,7 @@ import { ArrowLeft, Check, Clock3, CreditCard, Sparkles } from "lucide-react";
 import { elegirPlan } from "@/app/actions/billing";
 import { saveOnboardingBusiness, saveOnboardingServices } from "@/app/actions/turnos";
 import { BUSINESS_TYPES, businessTypeById } from "@/lib/business-types";
+import { normalizeMapsUrl } from "@/lib/maps";
 import { MagnetLogo } from "./magnet-logo";
 
 type ServiceRow = { name: string; emoji: string; durationMinutes: number; priceCents: number; on: boolean };
@@ -20,16 +21,7 @@ const SWATCHES = ["#E94F37", "#C5386A", "#7656D6", "#246BCE", "#1B7B94", "#19875
 // Acepta un enlace de Google Maps (link corto o largo). Rechaza texto suelto o
 // URLs que no sean de Maps, así el botón "Cómo llegar" nunca queda roto.
 function esLinkMapsValido(value: string): boolean {
-  const v = value.trim();
-  if (!v) return false;
-  try {
-    const url = new URL(v);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
-    const host = url.hostname.toLowerCase();
-    return host.includes("goo.gl") || host.includes("google.") || host.startsWith("maps.");
-  } catch {
-    return false;
-  }
+  return normalizeMapsUrl(value) !== null;
 }
 
 // Errores de "Tu negocio" (paso 1). Devuelve string vacío cuando el campo está OK.
@@ -106,13 +98,13 @@ export function OnboardingFlow({ initial }: { initial: InitialOnboarding }) {
     const limpio = {
       ...business,
       name: business.name.trim(),
-      mapsUrl: esLinkMapsValido(business.mapsUrl) ? business.mapsUrl.trim() : "",
+      mapsUrl: normalizeMapsUrl(business.mapsUrl) ?? "",
     };
     setBusiness(limpio);
     advance(1, () => saveOnboardingBusiness(limpio), 0);
   };
   const nextService = () => {
-    const elegidos = rows.filter((r) => r.on).map(({ on, ...s }) => s);
+    const elegidos = rows.filter((r) => r.on).map(({ on: _on, ...s }) => s);
     if (!elegidos.length) { setError("Elegí al menos un servicio."); return; }
     advance(2, () => saveOnboardingServices(elegidos), 1);
   };

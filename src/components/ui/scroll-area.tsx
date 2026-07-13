@@ -28,7 +28,11 @@ const ScrollBar = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.ScrollAreaScrollbar>
 >(({ className, orientation = "vertical", ...props }, ref) => (
 <ScrollAreaPrimitive.ScrollAreaScrollbar
+    ref={ref}
+    orientation={orientation}
+    className={className}
     style={{ opacity: 0, width: 0, pointerEvents: "none" }} // 🔥 Invisible
+    {...props}
   >
     <ScrollAreaPrimitive.ScrollAreaThumb className="hidden" />
   </ScrollAreaPrimitive.ScrollAreaScrollbar>

@@ -2,14 +2,9 @@
 
 import { useState, useRef, useEffect } from 'react'
 import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area
+  LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
-import {
-  ChevronDown, TrendingUp, AlertCircle, Navigation,
-  BarChart3, Eye, MapPin
-} from 'lucide-react'
 
 // ✅ ScrollReveal corregido
 export function ScrollReveal({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
@@ -52,26 +47,11 @@ const eficienciaData = [
   { mes: 'Jun', eficiencia: 92, target: 92 }
 ]
 
-const costosData = [
-  { categoria: 'Sin optimización', costo: 850000 },
-  { categoria: 'Con NomosDelta', costo: 765000 }
-]
-
 const distribucionCostos = [
   { name: 'Combustible', value: 45 },
   { name: 'Mantenimiento', value: 25 },
   { name: 'Tiempos muertos', value: 18 },
   { name: 'Personal', value: 12 }
-]
-
-const utilizacionFlota = [
-  { hora: '00:00', util: 20 },
-  { hora: '04:00', util: 15 },
-  { hora: '08:00', util: 65 },
-  { hora: '12:00', util: 85 },
-  { hora: '16:00', util: 78 },
-  { hora: '20:00', util: 45 },
-  { hora: '23:59', util: 25 }
 ]
 
 const COLORS = ['#0369a1', '#0ea5e9', '#06b6d4', '#14b8a6']

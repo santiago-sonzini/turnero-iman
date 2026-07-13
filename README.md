@@ -1,36 +1,50 @@
 # Imán Turnos
 
-Turnero multi-tenant para comercios de servicios. Incluye agenda diaria con huecos accionables, vistas semana/mes, clientes recurrentes, promociones, servicios y horarios, tema por negocio, onboarding, reserva pública sin cuenta y suscripciones de Mercado Pago.
+Turnero multi-tenant para negocios de servicios. Incluye agenda, reserva pública, clientes, promociones, equipos de hasta tres profesionales, suscripciones de Mercado Pago y recordatorios por email o WhatsApp.
+
+## Requisitos
+
+- Node.js 20.9 o superior.
+- PostgreSQL accesible mediante `DATABASE_URL` y `DIRECT_URL`.
+- Supabase Auth para el acceso de dueños en producción.
 
 ## Desarrollo
 
 ```bash
+cp .env.example .env
 npm install
-npx prisma migrate deploy
+npm run db:migrate
 npm run db:seed
 npm run dev
 ```
 
-El seed crea **Barbería El Roble** (`/reservar/el-roble`) con servicios, clientes, historial, una semana realista y huecos en el día actual.
+Antes de integrar cambios:
+
+```bash
+npm run check
+npm run build
+```
+
+`npm run check` ejecuta ESLint, TypeScript y Vitest. El seed crea **Barbería El Roble** en `/el-roble/turnos` con datos de muestra.
 
 ## Arquitectura
 
-- Next.js App Router + Server Components/Actions.
-- PostgreSQL + Prisma, con `tenantId` inyectado en el cliente scoped de `src/server/db.ts`.
-- Supabase Auth para dueños; la reserva pública no requiere cuenta.
-- Mercado Pago Suscripciones (`preapproval`) con webhook firmado y estados de trial, gracia y bloqueo.
-- `Turnos` — ARS 15.000/mes: agenda, reservas, clientes, promos, links `wa.me` y Gmail/SMTP opcional.
-- `Turnos Auto` — ARS 25.000/mes: agrega automatización open-wa.
+- Next.js 16 App Router, React 19, Server Components y Server Actions.
+- PostgreSQL + Prisma. El cliente scoped de `src/server/db.ts` inyecta `tenantId`, y las claves compuestas también impiden cruces de tenant en la base.
+- Supabase Auth para dueños. Sin Supabase, el modo demo solo existe en desarrollo; producción falla cerrada.
+- Mercado Pago Suscripciones con webhook firmado, ventana temporal, idempotencia persistente y estados de trial, gracia y bloqueo.
+- `Turnos` — ARS 15.000/mes: agenda, reservas, clientes, promos, links de WhatsApp y email opcional.
+- `Turnos Pro` — ARS 30.000/mes: agrega profesionales, temas y automatización de WhatsApp.
 
-La reserva comprueba disponibilidad y escribe cliente+turno en una transacción. PostgreSQL aplica además `appointment_no_overlap`, una exclusión GiST sobre el rango horario por tenant; dos reservas simultáneas no pueden ocupar el mismo intervalo.
+La reserva valida disponibilidad y escribe cliente + turno dentro de una transacción. PostgreSQL aplica además la exclusión GiST `appointment_no_overlap`. Los enlaces privados usan tokens aleatorios por turno dentro del fragmento de URL; el servidor los intercambia por cookies HttpOnly y nunca toma el teléfono como prueba de identidad.
 
 ## Variables
 
-Ver `.env.example`. Para Gmail se usa una contraseña de aplicación en `SMTP_USER`/`SMTP_PASS`. Mercado Pago Suscripciones se prueba con usuarios de prueba vendedor/comprador y el token `APP_USR` del vendedor de prueba; el webhook es `/api/mp/webhook`.
+Ver `.env.example`. `RATE_LIMIT_SALT` debe ser un secreto aleatorio estable. Para Gmail se usa una contraseña de aplicación en `SMTP_USER`/`SMTP_PASS`. El webhook de Mercado Pago es `/api/mp/webhook`.
 
-## Turnos Auto / open-wa
+## Worker de WhatsApp
 
-El worker vive en `wa-server/` y debe correr como proceso persistente, separado de Next.js:
+El worker vive en `wa-server/` y debe ejecutarse como proceso persistente, aislado de Next.js:
 
 ```bash
 cd wa-server
@@ -38,20 +52,29 @@ npm install
 WA_SERVER_TOKEN=... IMAN_CORE_URL=https://app.example.com npm start
 ```
 
-- Cada tenant guarda su sesión exclusivamente en `wa-server/sessions/<tenantId>`.
-- La activación exige aceptación explícita del riesgo de una integración no oficial; se guarda fecha y responsable en `Tenant`.
-- La app persiste mensajes en `MessageJob`. El worker reclama lotes pequeños, aplica un intervalo aleatorio de 25–70 segundos, y reporta resultados.
-- Los errores reintentan con backoff exponencial hasta cuatro intentos. Después pasan a `FALLBACK`, para que el dueño continúe mediante `wa.me`.
-- Estados `DISCONNECTED`, `QR_PENDING`, `CONNECTED`, `DEGRADED` y `BANNED` son visibles en Ajustes. La caída o baneo del worker nunca bloquea agenda, reservas ni facturación.
-- `wa-server/auth`, `wa-server/sessions` y perfiles de navegador están ignorados por Git. No copies sesiones entre tenants.
+- Escucha en `127.0.0.1` por defecto. Exponerlo requiere un proxy privado/TLS y el bearer token.
+- Cada tenant guarda su sesión exclusivamente debajo de `wa-server/sessions/<tenantId>`.
+- Usa WhatsApp Web mediante `whatsapp-web.js`; sigue siendo una integración no oficial y requiere aceptación explícita del riesgo.
+- Los mensajes se persisten en `MessageJob`. El worker usa leases recuperables, lotes pequeños, ritmo aleatorio de 25–70 segundos y backoff.
+- Tras agotar reintentos, el mensaje pasa a `FALLBACK` para continuar con `wa.me`.
+- La caída o el bloqueo del worker no afecta agenda, reservas ni facturación.
 
-## Señas
+Nunca copies sesiones entre tenants ni las subas a Git.
 
-Las señas están postergadas. `BusinessProfile.depositsEnabled` y los campos `deposit*` de `Appointment` existen, pero toda reserva los deja desactivados. No hay Checkout de Mercado Pago para señas; la suscripción SaaS usa una integración separada.
+## Seguridad y privacidad
 
-## Commits de migración
+- La reserva pública tiene rate limiting persistente por IP anonimizada y teléfono.
+- Los tenants sin acceso vigente no pueden recibir reservas.
+- Los datos públicos se exponen mediante DTOs mínimos; credenciales y facturación no se serializan al navegador.
+- Se aplican CSP y headers de seguridad, validación estricta de links externos y controles de origen/identidad en billing y webhooks.
+- No se carga Meta Pixel. La política pública está en `/privacidad`.
 
-- `eefe77f`: snapshot previo del producto retail.
-- `d9d6aca`: eliminación aislada de ventas, productos, facturación, analítica e integración distribuidora.
+## Migraciones
 
-La migración `20260711143000_turnos_product` conserva tenants, usuarios, suscripciones y contactos útiles, elimina las tablas retail y crea el dominio de turnos.
+Las migraciones son parte del despliegue y deben aplicarse antes de iniciar la nueva versión:
+
+```bash
+npm run db:migrate
+```
+
+`20260713010000_security_hardening` agrega tokens por turno, idempotencia de webhooks, rate limiting, leases del worker e integridad multi-tenant, e invalida los tokens históricos por cliente. La columna legacy se conserva temporalmente para un rollout sin caída y ya no se usa en el código nuevo.

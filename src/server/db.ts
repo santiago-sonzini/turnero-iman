@@ -1,7 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { env } from "@/env";
 
-export const DEMO_MODE = !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY;
+// El modo demo solo existe en desarrollo. Una configuración incompleta en
+// producción debe fallar cerrada, nunca otorgar una sesión ficticia.
+export const DEMO_MODE = env.NODE_ENV !== "production" && (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY);
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 export const systemDb = globalForPrisma.prisma ?? new PrismaClient({
@@ -16,6 +18,8 @@ const scopes: Record<string, Scope> = {
   businessProfile: { kind: "column" },
   client: { kind: "column" },
   service: { kind: "column" },
+  staff: { kind: "column" },
+  staffService: { kind: "column" },
   workingHour: { kind: "column" },
   appointment: { kind: "column" },
   promotion: { kind: "column" },

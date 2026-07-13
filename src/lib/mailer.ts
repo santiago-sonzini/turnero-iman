@@ -7,10 +7,14 @@ export async function emailConfigurado(): Promise<boolean> {
 }
 
 function transporter() {
+  const port = Number(process.env.SMTP_PORT || 587);
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: false, // 587 = STARTTLS
+    port,
+    secure: port === 465,
+    requireTLS: port !== 465,
+    connectionTimeout: 8_000,
+    socketTimeout: 15_000,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   });
 }

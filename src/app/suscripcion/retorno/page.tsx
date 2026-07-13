@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { confirmarRetorno } from "@/app/actions/billing";
 
-export default async function Retorno({
-  searchParams,
-}: {
-  searchParams: Record<string, string | string[] | undefined>;
-}) {
+export default async function Retorno(
+  props: {
+    searchParams: Promise<Record<string, string | string[] | undefined>>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const preapprovalId =
     (searchParams.preapproval_id as string) ?? (searchParams.id as string) ?? null;
 

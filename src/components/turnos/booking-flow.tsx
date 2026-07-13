@@ -2,16 +2,19 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { ArrowLeft, CalendarPlus, Check, Clock3, Instagram, MapPin, MessageCircle, X } from "lucide-react";
-import { bookPublic, cancelPublicAppointment } from "@/app/actions/turnos";
-import { computeSlots, isVacation } from "@/lib/availability";
+import { bookPublic, cancelPublicAppointment, claimPublicAppointmentAccess } from "@/app/actions/turnos";
+import { isVacation, weekdayOf } from "@/lib/availability";
+import { whatsappUrl } from "@/lib/phone";
 import { MagnetLogo } from "./magnet-logo";
 
 const money = (c: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 0 }).format(c / 100);
 const CONFETI = ["#E94F37", "#FFC53D", "#35B36B", "#246BCE", "#7656D6", "#FFFDF8"];
 
 export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any; promoToken?: string; preStaffId?: string }) {
-  const staffList: any[] = initial.staff ?? [];
+  const router = useRouter();
+  const staffList: any[] = useMemo(() => initial.staff ?? [], [initial.staff]);
   const [step, setStep] = useState(0);
   const [service, setService] = useState<any>(null);
   const [date, setDate] = useState("");
@@ -21,9 +24,10 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
   const [saving, start] = useTransition();
   const [result, setResult] = useState<any>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
-  const [marketingConsent, setMarketingConsent] = useState(true);
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [cancelStep, setCancelStep] = useState<"idle" | "confirm" | "done">("idle");
   const [cancelErr, setCancelErr] = useState("");
+  const [accessErr, setAccessErr] = useState("");
 
   const showPrices = initial.profile.showPrices !== false;
   const vacations = initial.profile.vacations ?? [];
@@ -41,23 +45,27 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
     if (staffId && service && !staffParaServicio.some((s: any) => s.id === staffId)) setStaffId("");
   }, [service, staffId, staffParaServicio]);
 
-  // Disponibilidad al instante en el cliente. Con profesional: cupo 1 y su
-  // ocupación; "cualquiera" queda libre mientras haya uno (que ofrezca el
-  // servicio) sin ocupar. El server re-valida y asigna al confirmar.
-  const slots = useMemo(() => {
-    if (!service || !date) return [];
-    const busyAll: any[] = initial.busy ?? [];
-    if (staffId) {
-      const busy = busyAll.filter((b) => b.staffId === staffId);
-      return computeSlots({ date, durationMinutes: service.durationMinutes, hours: initial.hours, busy, rules: initial.profile, vacations, capacity: 1 });
-    }
-    if (staffList.length && staffParaServicio.length) {
-      const ids = new Set(staffParaServicio.map((s: any) => s.id));
-      const busy = busyAll.filter((b) => ids.has(b.staffId));
-      return computeSlots({ date, durationMinutes: service.durationMinutes, hours: initial.hours, busy, rules: initial.profile, vacations, capacity: staffParaServicio.length });
-    }
-    return computeSlots({ date, durationMinutes: service.durationMinutes, hours: initial.hours, busy: busyAll, rules: initial.profile, vacations, capacity: 1 });
-  }, [service, date, staffId, staffParaServicio, staffList.length, initial, vacations]);
+  const slots: string[] = service && date
+    ? initial.availability?.[`${service.id}|${date}|${staffId || "*"}`] ?? []
+    : [];
+
+  // Magic link: el fragmento no se envía al servidor ni como Referer. Se
+  // intercambia una vez por una cookie HttpOnly y luego se limpia la URL.
+  useEffect(() => {
+    const raw = window.location.hash.startsWith("#booking=")
+      ? decodeURIComponent(window.location.hash.slice("#booking=".length))
+      : "";
+    if (!raw) return;
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    const separator = raw.indexOf(".");
+    if (separator < 1) { setAccessErr("El enlace de tu turno no es válido."); return; }
+    const appointmentId = raw.slice(0, separator);
+    const token = raw.slice(separator + 1);
+    void claimPublicAppointmentAccess({ slug: initial.tenant.slug, appointmentId, token }).then((response) => {
+      if (!response.ok) { setAccessErr(response.error); return; }
+      router.refresh();
+    });
+  }, [initial.tenant.slug, router]);
 
   const staffElegido = staffId ? staffParaServicio.find((s: any) => s.id === staffId) : null;
 
@@ -105,7 +113,7 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
     <header className="bk-hero">
       <span className="powered"><MagnetLogo /> Imán Turnos</span>
       <div className="foto">{initial.profile.logoUrl
-        ? <img src={initial.profile.logoUrl} alt={`Logo de ${initial.profile.name}`} />
+        ? <Image src={initial.profile.logoUrl} alt={`Logo de ${initial.profile.name}`} width={96} height={96} unoptimized />
         : initial.services[0]?.emoji ?? "🧲"}</div>
       <h1>{initial.profile.name}</h1>
       {initial.profile.mapsUrl
@@ -114,7 +122,8 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
       {initial.profile.instagram && <a className="meta meta-link" href={`https://instagram.com/${initial.profile.instagram}`} target="_blank" rel="noopener noreferrer"><Instagram /> @{initial.profile.instagram}</a>}
     </header>
 
-    {initial.promo && step < 3 && <div className="promo-banner"><span>🎁</span><div><b>{initial.promo.name}</b><p>{initial.promo.message}</p></div></div>}
+      {accessErr && <p className="form-error" role="alert">{accessErr}</p>}
+      {initial.promo && step < 3 && <div className="promo-banner"><span>🎁</span><div><b>{initial.promo.name}</b><p>{initial.promo.message}</p></div></div>}
 
     {step < 3 && <div className="bk-prog">
       {[0, 1, 2].map((i) => <span key={i} className={`step ${i < step ? "done" : i === step ? "now" : ""}`}><i /></span>)}
@@ -145,7 +154,7 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
       <div className="dias-scroll">
         {days.map((d) => {
           const key = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
-          const closed = !openWeekdays.has(d.getDay()) || isVacation(key, vacations);
+          const closed = !openWeekdays.has(weekdayOf(key)) || isVacation(key, vacations);
           return <button key={key} disabled={closed} className={`dia-pastilla ${date === key ? "sel" : ""} ${closed ? "cerrado" : ""}`} onClick={() => { setDate(key); setTime(""); }}>
             <span className="dow">{d.toLocaleDateString("es-AR", { weekday: "short" })}</span>
             <span className="num">{d.getDate()}</span>
@@ -175,15 +184,15 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
         <div className="r-fila"><span className="k">Hora</span><span className="v">{time}</span></div>
         {showPrices && <div className="r-fila r-total"><span className="k">Total</span><span className="v">{money(service.priceCents)}</span></div>}
       </div>
-      <div className="campo"><span>Tu nombre</span><input autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-      <div className="campo"><span>WhatsApp</span><input type="tel" inputMode="tel" placeholder="351 555 0194" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-        <p className="ayuda">Te contactamos por acá si hay algún cambio.</p></div>
-      <div className="campo"><span>Email <em className="opt">opcional</em></span><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+      <label className="campo"><span>Tu nombre</span><input autoComplete="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+      <label className="campo"><span>WhatsApp</span><input type="tel" inputMode="tel" autoComplete="tel" placeholder="351 555 0194" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        <p className="ayuda">Te contactamos por acá si hay algún cambio.</p></label>
+      <label className="campo"><span>Email <em className="opt">opcional</em></span><input type="email" autoComplete="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
       <button type="button" className={`consent ${marketingConsent ? "on" : ""}`} aria-pressed={marketingConsent} onClick={() => setMarketingConsent((v) => !v)}>
         <Smiley happy={marketingConsent} />
         <span className="info">
-          <b>Quiero recibir promociones y recordatorios</b>
-          <small>{marketingConsent ? "¡Genial! Te avisamos de huecos y promos 🎉" : "No te vamos a mandar promos ni recordatorios"}</small>
+          <b>Quiero recibir promociones</b>
+          <small>{marketingConsent ? "Podemos avisarte de huecos y promociones." : "Solo vas a recibir mensajes sobre este turno."}</small>
         </span>
         <span className="check">{marketingConsent && <Check />}</span>
       </button>
@@ -225,9 +234,9 @@ export function BookingFlow({ initial, promoToken, preStaffId }: { initial: any;
         </div>
         <div className="bk-ok-acciones">
           <button className="btn btn-acento block" onClick={addToCalendar}><CalendarPlus /> Agregar a calendario</button>
-          {initial.profile.phone && <a className="btn btn-wa block" href={`https://wa.me/54${initial.profile.phone.replace(/\D/g, "")}`} target="_blank"><MessageCircle /> Escribir al negocio</a>}
+          {initial.profile.phone && <a className="btn btn-wa block" href={whatsappUrl(initial.profile.phone)} target="_blank" rel="noopener noreferrer"><MessageCircle /> Escribir al negocio</a>}
         </div>
-        {result?.appointmentId && <div className="bk-ok-cancelar">
+        {result?.appointmentId && initial.profile.cancelWindowHours > 0 && <div className="bk-ok-cancelar">
           {cancelStep === "confirm"
             ? <><p className="bk-cancel-q">¿Seguro que querés cancelar este turno?</p>
                 <div className="bk-cancel-row">
@@ -251,9 +260,9 @@ function ReturningClient({ mis, slug, windowHours }: { mis: any; slug: string; w
   const [pending, start] = useTransition();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const now = Date.now();
-  const fmt = (v: string) => new Date(v).toLocaleString("es-AR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
-  const fmtDay = (v: string) => new Date(v).toLocaleDateString("es-AR", { day: "numeric", month: "long" });
+  const [now] = useState(() => Date.now());
+  const fmt = (v: string) => new Date(v).toLocaleString("es-AR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/Argentina/Buenos_Aires" });
+  const fmtDay = (v: string) => new Date(v).toLocaleDateString("es-AR", { day: "numeric", month: "long", timeZone: "America/Argentina/Buenos_Aires" });
   const upcoming = mis.appointments.filter((a: any) => new Date(a.startsAt).getTime() >= now).sort((a: any, b: any) => +new Date(a.startsAt) - +new Date(b.startsAt));
   const last = mis.appointments.find((a: any) => new Date(a.startsAt).getTime() < now);
   const cancel = (id: string) => start(async () => {

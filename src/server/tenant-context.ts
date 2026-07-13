@@ -18,9 +18,10 @@ export class TenantError extends Error {
   }
 }
 
-function supabaseServer() {
-  const cookieStore = cookies();
-  return createServerClient(env.SUPABASE_URL!, env.SUPABASE_ANON_KEY!, {
+async function supabaseServer() {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) throw new TenantError("Auth no configurado");
+  const cookieStore = await cookies();
+  return createServerClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
     cookies: {
       get: (name: string) => cookieStore.get(name)?.value,
       set(_name: string, _value: string, _options: CookieOptions) {
@@ -42,7 +43,7 @@ export const getTenantId = cache(async (): Promise<string> => {
   if (DEMO_MODE) {
     return DEMO_TENANT_ID;
   }
-  const supabase = supabaseServer();
+  const supabase = await supabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();

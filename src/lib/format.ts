@@ -1,5 +1,24 @@
 // Formato argentino centralizado: $ 1.234,56 y dd/mm/aaaa
 
+export const AR_TIME_ZONE = "America/Argentina/Buenos_Aires";
+
+export function dateKeyAR(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: AR_TIME_ZONE }).format(date);
+}
+
+export function timeAR(date: Date): string {
+  return date.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: AR_TIME_ZONE });
+}
+
+export function minutesAR(date: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: AR_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
 const arsFormatter = new Intl.NumberFormat("es-AR", {
   style: "currency",
   currency: "ARS",

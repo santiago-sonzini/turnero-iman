@@ -1,46 +1,33 @@
 "use server"
-import { redirect } from "next/navigation";
 import { env } from '@/env'
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { getUser } from "@/server/users";
-import { User as UserDB } from "@prisma/client";
-import { User } from "@supabase/supabase-js";
+import { type User as UserDB } from "@prisma/client";
+import { type User } from "@supabase/supabase-js";
 
 
 
 export async function createClientServer() {
-  const cookieStore = cookies()
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+    throw new Error("Supabase Auth no está configurado")
+  }
+  const cookieStore = await cookies()
 
   return createServerClient(
     env.SUPABASE_URL!,
     env.SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
+        getAll() {
+          return cookieStore.getAll()
         },
-        set(name: string, value: string, options: CookieOptions) {
+        setAll(cookiesToSet) {
           try {
-            cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // The `set` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
-            console.log(error);
-
-          }
-        },
-        remove(name: string, options: CookieOptions) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // The `delete` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
-            console.log(error);
-
-          }
+            for (const { name, value, options } of cookiesToSet) {
+              cookieStore.set(name, value, options)
+            }
+          } catch { /* un Server Component no puede escribir; proxy refresca */ }
         },
       },
     }
@@ -56,7 +43,7 @@ export type UserServerResponse = {
 
 const getUserServer = async (): Promise<UserServerResponse> => {
   // Modo demo (sin Supabase configurado): sesión de dueño ficticia.
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+  if (env.NODE_ENV !== "production" && (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY)) {
     return {
       user: { id: "demo-user", email: "demo@iman.app" } as User,
       userDb: {
@@ -73,9 +60,7 @@ const getUserServer = async (): Promise<UserServerResponse> => {
   }
 
   const supabase = await createClientServer()
-  const {
-    data: { user }, error
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
     return null

@@ -1,5 +1,4 @@
 import Providers from "@/components/layout/providers";
-import { MetaPixel } from "@/components/analytics/meta-pixel";
 import { Toaster } from "@/components/ui/toaster";
 import "@/styles/globals.css";
 import "@/styles/month.css";
@@ -8,15 +7,14 @@ import "@/styles/landing.css";
 
 import { type Metadata } from "next";
 import NextTopLoader from 'nextjs-toploader';
-
-// Toda la app es un panel sobre datos vivos: nada se prerenderiza en build.
-// (Clave en modo demo: PGlite no soporta instancias paralelas en build.)
-export const dynamic = "force-dynamic";
+import { env } from "@/env";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   applicationName: "Imán Turnos",
-  title: "Imán Turnos | Tu agenda, sin huecos",
+  title: { default: "Imán Turnos | Tu agenda, sin huecos", template: "%s | Imán Turnos" },
   description: "Turnos online, clientes recurrentes y promos para comercios de servicios.",
+  openGraph: { title: "Imán Turnos", description: "Tu agenda, sin huecos.", type: "website", locale: "es_AR" },
 };
 
 export default function RootLayout({
@@ -25,7 +23,6 @@ export default function RootLayout({
   return (
     <html lang="es-AR" suppressHydrationWarning>
       <body>
-        <MetaPixel />
         <NextTopLoader color="#e8503a" showSpinner={false} />
         <Providers>
           <Toaster />

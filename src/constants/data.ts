@@ -1,5 +1,4 @@
-import { Icons } from '@/components/icons';
-import { NavItem } from '@/types';
+import { type NavItem } from '@/types';
 
 export type User = {
   id: number;

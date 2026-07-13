@@ -1,18 +1,16 @@
 "use client";
 
 import {
-  ColumnDef,
+  type ColumnDef,
   flexRender,
   getCoreRowModel,
   useReactTable,
   getPaginationRowModel,
-  SortingState,
+  type SortingState,
   getSortedRowModel,
-  ColumnFiltersState,
+  type ColumnFiltersState,
   getFilteredRowModel,
-  VisibilityState,
-  OnChangeFn,
-  Updater,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import {
   Table,
@@ -27,7 +25,6 @@ import { DataTablePagination } from "./data-table-pagination";
 import { Input } from "./input";
 import { DataTableViewOptions } from "./data-table-view-options";
 import { LoadingSpinner } from "./loading";
-import { Search } from "lucide-react";
 
 interface DataTableProps<TData, TValue> {
   loading?: boolean;
@@ -127,23 +124,25 @@ export function DataTable<TData, TValue>({
     <div className="space-y-4">
       {searchKey && (
         <div className="flex items-center py-4">
-         <div className="flex items-center gap-3 bg-muted/40 p-2 rounded-sm border border-border/50 w-full max-w-md">
-  <div className="relative flex-1">
-    <Input
-      placeholder={`Buscar por ${searchKey}...`}
-      value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
-      onChange={(event) =>
-        table.getColumn(searchKey)?.setFilterValue(event.target.value)
-      }
-      className="flex items-center w-full pl-9 pr-3 py-2 text-sm rounded-sm border border-border focus-visible:ring-1 focus-visible:ring-ring"
-    />
-  </div>
-  {loading && (
-    <div className="flex items-center justify-center w-8 h-8">
-      <LoadingSpinner className="w-4 h-4 text-muted-foreground" />
-    </div>
-  )}
-</div>
+          <div className="flex w-full max-w-md items-center gap-3 rounded-sm border border-border/50 bg-muted/40 p-2">
+            <div className="relative flex-1">
+              <Input
+                placeholder={`Buscar por ${searchKey}...`}
+                value={
+                  (table.getColumn(searchKey)?.getFilterValue() as string) ?? ""
+                }
+                onChange={(event) =>
+                  table.getColumn(searchKey)?.setFilterValue(event.target.value)
+                }
+                className="flex w-full items-center rounded-sm border border-border py-2 pl-9 pr-3 text-sm focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            {loading && (
+              <div className="flex h-8 w-8 items-center justify-center">
+                <LoadingSpinner className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
+          </div>
 
           <DataTableViewOptions table={table} />
         </div>

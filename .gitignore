@@ -33,9 +33,6 @@ yarn-error.log*
 *.tsbuildinfo
 # idea files
 .idea
-# Demo database (PGlite)
-.pglite-demo/
-.pglite-demos/
 # Subidas locales (modo sin Supabase)
 public/uploads/
 # Sesión del servidor de WhatsApp (Baileys)
@@ -43,8 +40,13 @@ wa-server/node_modules/
 wa-server/auth/
 wa-server/sessions/
 wa-server/_IGNORE_*/
-wa-server/package-lock.json
 .env*
 !.env.example
 /.claude/
 /seed-errors.log
+
+# managed by open-wa
+**.data.json
+**.node-persist**
+**_IGNORE_**
+# end managed by open-wa
