@@ -73,7 +73,11 @@ export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
             <h2>{mode === "signup" ? "Abrí tu agenda" : "Entrá a tu agenda"}</h2>
             <p>{mode === "signup" ? "Nombre, email y clave. Después te guiamos." : "Usá el email con el que creaste tu cuenta."}</p>
           </header>
-          <form action={submit}>
+          {/* onSubmit (no action={submit}): en React 19 el prop `action` con una
+              función resetea los inputs no controlados al invocarla, borrando lo
+              tipeado cuando cortamos por validación (p. ej. términos sin aceptar).
+              Con onSubmit + preventDefault los datos del signup se conservan. */}
+          <form onSubmit={(event) => { event.preventDefault(); submit(new FormData(event.currentTarget)); }}>
             {mode === "signup" && <label className="auth-field" htmlFor="negocio"><span>Nombre de tu negocio</span><div><Store /><input id="negocio" name="negocio" required minLength={2} autoComplete="organization" placeholder="Ej: Barbería El Roble" /></div></label>}
             <label className="auth-field" htmlFor="email"><span>Email</span><div><Mail /><input id="email" name="email" required type="email" autoComplete="username" placeholder="vos@tubarberia.com" /></div></label>
             <label className="auth-field" htmlFor="password"><span>Clave</span><div><LockKeyhole /><input id="password" name="password" required minLength={8} type={showPassword ? "text" : "password"} autoComplete={mode === "signup" ? "new-password" : "current-password"} placeholder="Mínimo 8 caracteres" /><button type="button" tabIndex={-1} aria-label={showPassword ? "Ocultar clave" : "Mostrar clave"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</button></div></label>

@@ -9,20 +9,16 @@ import { getCurrentTenant } from "@/server/tenant-context";
 import { DIAS_TRIAL, PLANES, finPeriodoSuscripcion, formatoArs } from "@/server/plans";
 import {
   actualizarMonto,
-  appUrl,
   buscarSuscripciones,
   cancelarSuscripcionMp,
-  crearPlanCompartido,
   crearSuscripcionPendiente,
   elegirSuscripcionCanonica,
   haySuscripcionLegacySinReferencia,
   MercadoPagoError,
   mpConfigurado,
-  obtenerPlan,
   obtenerSuscripcion,
   suscripcionCancelada,
   type MpPreapproval,
-  type MpPreapprovalPlan,
 } from "@/server/mp/preapproval";
 import { reconciliarPagosSuscripcion, sincronizarPreapproval } from "@/server/mp/webhook";
 import { track } from "@/server/track";
@@ -103,40 +99,10 @@ export async function activarPago(): Promise<ResultadoPlan> {
 }
 
 /**
- * Plan COMPARTIDO del tier: se crea una sola plantilla por plan y se cachea en
- * la tabla MpPlan; todos los tenants suscriben sobre la misma (antes se creaba
- * un plan por cliente). Devuelve su init_point.
- */
-async function planCompartido(tier: PlanTier): Promise<MpPreapprovalPlan> {
-  const plan = PLANES[tier];
-  const backUrl = `${appUrl()}/suscripcion/retorno`;
-  const guardado = await systemDb.mpPlan.findUnique({ where: { tier } });
-  if (guardado && guardado.amountArs === plan.precioArs) {
-    try {
-      const mp = await obtenerPlan(guardado.mpPlanId);
-      // Recreamos si cambió la URL pública: el back_url queda grabado en el plan,
-      // así que un plan viejo redirigiría al dominio anterior tras autorizar.
-      if (mp.status !== "cancelled" && mp.back_url === backUrl) return mp;
-    } catch (e) {
-      console.error("[mp] plan compartido guardado no recuperable; se recrea", e);
-    }
-  }
-  const nuevo = await crearPlanCompartido({
-    razon: `Imán — Plan ${plan.nombre} (${formatoArs(plan.precioArs!)}/mes)`,
-    montoArs: plan.precioArs!,
-    trialDias: DIAS_TRIAL,
-  });
-  // Reemplaza cualquier registro previo del tier (p. ej. si cambió el precio).
-  await systemDb.mpPlan.deleteMany({ where: { tier } });
-  await systemDb.mpPlan.create({ data: { tier, mpPlanId: nuevo.id, amountArs: plan.precioArs! } });
-  return nuevo;
-}
-
-/**
- * Crea una preapproval INDIVIDUAL asociada al plan compartido. El ID existe y
- * queda persistido antes de redirigir; external_reference nace con tenantId.
- * Un advisory lock evita dos creaciones concurrentes y la búsqueda previa
- * recupera una creación que haya quedado entre la API de MP y el commit local.
+ * Crea una preapproval INDIVIDUAL (sin plan asociado). El ID existe y queda
+ * persistido antes de redirigir; external_reference nace con tenantId. Un
+ * advisory lock evita dos creaciones concurrentes y la búsqueda previa recupera
+ * una creación que haya quedado entre la API de MP y el commit local.
  */
 async function suscribirTenant(tier: PlanTier): Promise<ResultadoPlan> {
   const tenant = await getCurrentTenant();
@@ -144,7 +110,6 @@ async function suscribirTenant(tier: PlanTier): Promise<ResultadoPlan> {
   if (!plan.precioArs) return { ok: false, error: "Plan sin precio online." };
 
   try {
-    const mpPlan = await planCompartido(tier);
     const email = tenant.mpPayerEmail ?? (await getUserServer())?.user.email ?? null;
     if (!email) return { ok: false, error: "Necesitamos el email de tu cuenta para iniciar el pago." };
     const checkoutToken = randomBytes(32).toString("base64url");
@@ -154,7 +119,10 @@ async function suscribirTenant(tier: PlanTier): Promise<ResultadoPlan> {
       .digest("hex");
 
     const pre = await systemDb.$transaction(async (tx): Promise<MpPreapproval> => {
-      await tx.$queryRaw(Prisma.sql`
+      // $executeRaw (no $queryRaw): pg_advisory_xact_lock() devuelve `void` y
+      // $queryRaw falla al deserializar esa columna ("type 'void'"). executeRaw
+      // no lee result set, así que toma el lock sin romper la transacción.
+      await tx.$executeRaw(Prisma.sql`
         SELECT pg_advisory_xact_lock(hashtextextended(${`mp-checkout:${tenant.id}`}, 0))
       `);
       const fresh = await tx.tenant.findUniqueOrThrow({ where: { id: tenant.id } });
@@ -172,15 +140,15 @@ async function suscribirTenant(tier: PlanTier): Promise<ResultadoPlan> {
         }
       }
 
-      const knownPlans = await tx.mpPlan.findMany({ select: { mpPlanId: true } });
+      // Por external_reference recuperamos las suscripciones de ESTE tenant
+      // (plan-era o no); por payer_email detectamos una legacy sin referencia
+      // que pudiera seguir cobrando. Ya no dependemos de un plan asociado.
+      const porRef = await buscarSuscripciones({ externalReference: tenant.id });
+      const porEmail = await buscarSuscripciones({ payerEmail: email });
+      const legacySinReferencia = haySuscripcionLegacySinReferencia(porEmail);
       const byId = new Map<string, MpPreapproval>();
-      let legacySinReferencia = false;
-      for (const knownPlan of knownPlans) {
-        const found = await buscarSuscripciones({ payerEmail: email, planId: knownPlan.mpPlanId });
-        if (haySuscripcionLegacySinReferencia(found)) legacySinReferencia = true;
-        for (const item of found) {
-          if (item.external_reference === tenant.id) byId.set(item.id, item);
-        }
+      for (const item of [...porRef, ...porEmail]) {
+        if (item.external_reference === tenant.id) byId.set(item.id, item);
       }
       if (stored) byId.set(stored.id, stored);
       const exactas = [...byId.values()];
@@ -201,10 +169,12 @@ async function suscribirTenant(tier: PlanTier): Promise<ResultadoPlan> {
         }
       } else {
         canonical = await crearSuscripcionPendiente({
-          planId: mpPlan.id,
           payerEmail: email,
           tenantId: tenant.id,
           idempotencyKey,
+          razon: `Imán — Plan ${plan.nombre} (${formatoArs(plan.precioArs)}/mes)`,
+          montoArs: plan.precioArs,
+          trialDias: DIAS_TRIAL,
         });
       }
 
@@ -373,15 +343,14 @@ export async function confirmarRetorno(preapprovalId: string): Promise<{ authori
     return { authorized: false, paid: false };
   }
   const pre = await obtenerSuscripcion(preapprovalId);
-  const esNuestroPlan = !!pre.preapproval_plan_id
-    && !!(await systemDb.mpPlan.findUnique({ where: { mpPlanId: pre.preapproval_plan_id } }));
   const cookieStore = await cookies();
   const checkoutToken = cookieStore.get(MP_CHECKOUT_COOKIE)?.value ?? "";
   const checkoutValido = !!tenant.mpCheckoutExpiresAt && tenant.mpCheckoutExpiresAt > new Date()
     && checkoutTokenMatches(checkoutToken, tenant.mpCheckoutTokenHash);
+  // Propiedad: mismo ID que iniciamos + external_reference == tenantId + token de
+  // checkout válido. (Ya no se valida por preapproval_plan_id: sin plan asociado.)
   const esDeTenant = pre.id === tenant.mpPreapprovalId
     && pre.external_reference === tenant.id
-    && esNuestroPlan
     && checkoutValido;
   if (!esDeTenant) {
     console.warn("[mp] retorno con preapproval no vinculable", preapprovalId, tenant.id);

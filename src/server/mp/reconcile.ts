@@ -26,12 +26,13 @@ export async function reconciliarTenantMercadoPago(
 ): Promise<ReconciliationResult> {
   const initial = await systemDb.tenant.findUnique({ where: { id: tenantId } });
   if (!initial?.plan || !initial.mpPayerEmail) return { status: "not_configured" };
-  const plan = await systemDb.mpPlan.findUnique({ where: { tier: initial.plan } });
-  if (!plan) return { status: "not_configured" };
 
   let manualReview = false;
   const canonical = await systemDb.$transaction(async (tx): Promise<MpPreapproval | null> => {
-    await tx.$queryRaw(Prisma.sql`
+    // $executeRaw (no $queryRaw): pg_advisory_xact_lock() devuelve `void` y
+    // $queryRaw falla al deserializar esa columna ("type 'void'"). executeRaw
+    // no lee result set, así que toma el lock sin romper la transacción.
+    await tx.$executeRaw(Prisma.sql`
       SELECT pg_advisory_xact_lock(hashtextextended(${`mp-checkout:${tenantId}`}, 0))
     `);
     const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
@@ -46,17 +47,14 @@ export async function reconciliarTenantMercadoPago(
       if (stored && stored.external_reference !== tenant.id) return null;
     }
 
-    const knownPlans = await tx.mpPlan.findMany({ select: { mpPlanId: true } });
+    // Por external_reference (== tenantId) recuperamos sus suscripciones; por
+    // payer_email detectamos una legacy sin referencia que siga cobrando.
+    const porRef = await buscarSuscripciones({ externalReference: tenant.id });
+    const porEmail = await buscarSuscripciones({ payerEmail: tenant.mpPayerEmail! });
+    if (haySuscripcionLegacySinReferencia(porEmail)) manualReview = true;
     const byId = new Map<string, MpPreapproval>();
-    for (const knownPlan of knownPlans) {
-      const found = await buscarSuscripciones({
-        payerEmail: tenant.mpPayerEmail!,
-        planId: knownPlan.mpPlanId,
-      });
-      if (haySuscripcionLegacySinReferencia(found)) manualReview = true;
-      for (const pre of found) {
-        if (pre.external_reference === tenant.id) byId.set(pre.id, pre);
-      }
+    for (const pre of [...porRef, ...porEmail]) {
+      if (pre.external_reference === tenant.id) byId.set(pre.id, pre);
     }
     if (stored) byId.set(stored.id, stored);
     const exact = [...byId.values()];

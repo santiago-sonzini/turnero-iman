@@ -145,24 +145,34 @@ export async function obtenerSuscripcion(id: string): Promise<MpPreapproval> {
 }
 
 /**
- * Crea la suscripción individual antes de redirigir. A diferencia de abrir el
- * init_point del plan compartido directamente, MP devuelve aquí el ID que se
- * persiste en Tenant y external_reference queda atado al tenant desde origen.
+ * Crea la suscripción individual (SIN plan asociado) antes de redirigir. MP
+ * devuelve aquí el ID que se persiste en Tenant y external_reference queda atado
+ * al tenant desde origen.
+ *
+ * Por qué sin `preapproval_plan_id`: al asociar un plan, la API de /preapproval
+ * EXIGE `card_token_id` (400 "card_token_id is required") porque MP asume cobro
+ * directo con tarjeta ya capturada. Sin plan y con `status: "pending"`, MP
+ * devuelve un `init_point` para que el cliente elija el medio de pago en su
+ * sitio. En este modo `reason` es obligatorio y el débito recurrente + free
+ * trial viajan inline en `auto_recurring`.
  */
 export async function crearSuscripcionPendiente(params: {
-  planId: string;
   payerEmail: string;
   tenantId: string;
   idempotencyKey: string;
+  razon: string;
+  montoArs: number;
+  trialDias?: number;
 }): Promise<MpPreapproval> {
   return mp<MpPreapproval>("/preapproval", {
     method: "POST",
     headers: { "X-Idempotency-Key": params.idempotencyKey },
     body: JSON.stringify({
-      preapproval_plan_id: params.planId,
+      reason: params.razon,
       payer_email: params.payerEmail,
       external_reference: params.tenantId,
       back_url: `${appUrl()}/suscripcion/retorno`,
+      auto_recurring: autoRecurring(params.montoArs, params.trialDias),
       status: "pending",
     }),
   });
@@ -170,15 +180,19 @@ export async function crearSuscripcionPendiente(params: {
 
 type MpSearch<T> = { paging?: { total?: number }; results?: T[] };
 
+/**
+ * Busca preapprovals en la cuenta del vendedor. Sin plan asociado, el filtro ya
+ * no es `preapproval_plan_id`: por `externalReference` (== tenantId) recupera
+ * las de un tenant concreto; por `payerEmail` trae todas las de ese pagador
+ * (referenciadas o no), lo que permite detectar legacy sin external_reference.
+ */
 export async function buscarSuscripciones(params: {
-  payerEmail: string;
-  planId: string;
+  payerEmail?: string;
+  externalReference?: string;
 }): Promise<MpPreapproval[]> {
-  const query = new URLSearchParams({
-    payer_email: params.payerEmail,
-    preapproval_plan_id: params.planId,
-    limit: "100",
-  });
+  const query = new URLSearchParams({ limit: "100" });
+  if (params.payerEmail) query.set("payer_email", params.payerEmail);
+  if (params.externalReference) query.set("external_reference", params.externalReference);
   const result = await mp<MpSearch<MpPreapproval>>(`/preapproval/search?${query}`);
   return result.results ?? [];
 }

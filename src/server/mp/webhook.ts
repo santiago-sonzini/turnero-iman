@@ -72,13 +72,11 @@ export function preapprovalPerteneceATenant(
 }
 
 async function tenantDePreapproval(pre: MpPreapproval): Promise<Tenant | null> {
-  if (!pre.preapproval_plan_id) return null;
-  const planPropio = await systemDb.mpPlan.findUnique({
-    where: { mpPlanId: pre.preapproval_plan_id },
-    select: { mpPlanId: true },
-  });
-  if (!planPropio) return null;
-
+  // Propiedad por external_reference (== tenantId): lo grabamos nosotros al crear
+  // la preapproval y MP lo devuelve verbatim; crear una preapproval bajo nuestra
+  // cuenta exige nuestro access token, así que ese campo solo lo fijamos nosotros.
+  // Antes se discriminaba por preapproval_plan_id ∈ MpPlan, pero las
+  // suscripciones ya no llevan plan asociado.
   const porId = await systemDb.tenant.findUnique({
     where: { mpPreapprovalId: pre.id },
   });
