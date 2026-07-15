@@ -37,7 +37,7 @@ export function abs(path = "/"): string {
 
 /** FAQ compartida entre la landing y el JSON-LD (FAQPage) para no duplicar. */
 export const LANDING_FAQ: ReadonlyArray<{ q: string; a: string }> = [
-  { q: "¿Cuánto sale?", a: "Turnos cuesta $ 15.000 por mes y Turnos Pro $ 30.000. En pesos, sin costo por turno ni sorpresas en dólares." },
+  { q: "¿Cuánto sale?", a: "Turnos cuesta $ 20.000 por mes, Turnos Pro $ 35.000 y Turnos Personalizado $ 60.000. En pesos, sin costo por turno ni sorpresas en dólares." },
   { q: "¿Mis clientes tienen que bajarse una app?", a: "No. Entran a tu link, eligen horario y confirman. Sin cuenta, app ni contraseña." },
   { q: "¿Qué pasa con mis datos y mis clientes?", a: "Son tuyos, están separados por negocio y solo usamos proveedores necesarios para operar autenticación, base de datos, pagos, email y mensajería." },
   { q: "¿Cuánto tarda armarlo?", a: "Menos de 3 minutos: nombre, primer servicio y color. Después ajustás horarios y compartís tu link." },
@@ -91,8 +91,9 @@ export function softwareApplicationLd(): Json {
     inLanguage: SITE.lang,
     publisher: { "@id": `${SITE.url}/#organization` },
     offers: [
-      { "@type": "Offer", name: "Turnos", price: "15000", priceCurrency: "ARS", category: "subscription", url: abs("/#precio") },
-      { "@type": "Offer", name: "Turnos Pro", price: "30000", priceCurrency: "ARS", category: "subscription", url: abs("/#precio") },
+      { "@type": "Offer", name: "Turnos", price: "20000", priceCurrency: "ARS", category: "subscription", url: abs("/#precio") },
+      { "@type": "Offer", name: "Turnos Pro", price: "35000", priceCurrency: "ARS", category: "subscription", url: abs("/#precio") },
+      { "@type": "Offer", name: "Turnos Personalizado", price: "60000", priceCurrency: "ARS", category: "subscription", url: abs("/#precio") },
     ],
     featureList: [
       "Turnos ilimitados",

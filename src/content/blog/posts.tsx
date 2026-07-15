@@ -56,7 +56,7 @@ const POSTS: BlogPost[] = [
     faq: [
       { q: "¿Qué es un sistema de turnos online?", a: "Es una herramienta que le da a tu negocio una página de reservas propia. Tu cliente entra desde un link, elige servicio, día y horario, y confirma solo. La agenda se actualiza al instante y vos dejás de contestar mensajes uno por uno." },
       { q: "¿Necesito que mis clientes se descarguen una app?", a: "No. Un buen sistema funciona desde el navegador: el cliente abre tu link, reserva y listo. Sin cuenta, sin contraseña y sin instalar nada." },
-      { q: "¿Cuánto cuesta un sistema de turnos en Argentina?", a: "Depende del producto. Imán Turnos arranca en $ 15.000 por mes para un negocio y $ 30.000 para el plan Pro con varios profesionales. En pesos y sin costo por turno." },
+      { q: "¿Cuánto cuesta un sistema de turnos en Argentina?", a: "Depende del producto. Imán Turnos arranca en $ 20.000 por mes, el plan Pro cuesta $ 35.000 y la opción personalizada para equipos de hasta 10 profesionales cuesta $ 60.000. En pesos y sin costo por turno." },
       { q: "¿Cuánto tardo en configurarlo?", a: "Menos de una tarde. Cargás el nombre del negocio, tus servicios con precio y duración, tus horarios de atención y tu color. En Imán Turnos el mínimo para publicar tu link son 3 minutos." },
     ],
     Body: () => (

@@ -196,12 +196,12 @@ export function OnboardingFlow({ initial }: { initial: InitialOnboarding }) {
       <p className="bk-sub">Elegí con qué plan arrancás. Cambiás cuando quieras — los 7 días son gratis igual.</p>
       <button type="button" className={`plan-opt ${planElegido === "TURNOS" ? "on" : ""}`} onClick={() => setPlanElegido("TURNOS")}>
         <span className="emo"><Clock3 /></span>
-        <div className="info"><span className="nom">Turnos · $ 15.000/mes</span><span className="sub">Agenda, reservas, clientes, promos, wa.me y email.</span></div>
+        <div className="info"><span className="nom">Turnos · $ 20.000/mes</span><span className="sub">Agenda, reservas, clientes, promos, wa.me y email.</span></div>
         <span className="plan-check">{planElegido === "TURNOS" && <Check />}</span>
       </button>
       <button type="button" className={`plan-opt destacado ${planElegido === "TURNOS_AUTO" ? "on" : ""}`} onClick={() => setPlanElegido("TURNOS_AUTO")}>
         <span className="emo"><Sparkles /></span>
-        <div className="info"><span className="nom">Turnos Pro · $ 30.000/mes <em className="plan-badge">Más completo</em></span><span className="sub">Todo Turnos + hasta 3 profesionales con agenda propia y temas visuales.</span></div>
+        <div className="info"><span className="nom">Turnos Pro · $ 35.000/mes <em className="plan-badge">Más elegido</em></span><span className="sub">Todo Turnos + hasta 3 profesionales con agenda propia y temas visuales.</span></div>
         <span className="plan-check">{planElegido === "TURNOS_AUTO" && <Check />}</span>
       </button>
       {initial.mp

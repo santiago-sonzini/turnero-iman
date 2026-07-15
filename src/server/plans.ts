@@ -32,12 +32,12 @@ export function finPeriodoSuscripcion(
 
 export const PLANES: Record<PlanTier, PlanDef> = {
   TURNOS: {
-    tier: "TURNOS", nombre: "Turnos", precioArs: 15_000,
+    tier: "TURNOS", nombre: "Turnos", precioArs: 20_000,
     descripcion: "Agenda, reservas online, clientes, promos y mensajes manuales por WhatsApp.",
     features: ["turnos", "clientes", "promos", "wa_links", "email"],
   },
   TURNOS_AUTO: {
-    tier: "TURNOS_AUTO", nombre: "Turnos Pro", precioArs: 30_000,
+    tier: "TURNOS_AUTO", nombre: "Turnos Pro", precioArs: 35_000,
     descripcion: "Todo Turnos + hasta 3 profesionales con agenda propia y temas visuales para tu página.",
     features: ["turnos", "clientes", "promos", "wa_links", "email", "whatsapp_auto", "multi_staff", "temas"], destacado: true,
   },

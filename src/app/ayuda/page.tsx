@@ -130,8 +130,9 @@ export default function Ayuda() {
     <section id="suscripcion" className="docs-sec">
       <h2>💳 Planes y suscripción</h2>
       <ul>
-        <li><b>Turnos ($15.000/mes):</b> agenda, reservas online, clientes, promos, WhatsApp manual y emails.</li>
-        <li><b>Turnos Pro ($30.000/mes):</b> todo lo anterior + hasta 3 profesionales con agenda propia y temas visuales.</li>
+        <li><b>Turnos ($20.000/mes):</b> agenda, reservas online, clientes, promos, WhatsApp manual y emails.</li>
+        <li><b>Turnos Pro ($35.000/mes):</b> todo lo anterior + hasta 3 profesionales con agenda propia y temas visuales.</li>
+        <li><b>Turnos Personalizado ($60.000/mes):</b> hasta 10 profesionales, diseño personalizado y posibilidad de usar un dominio propio. Se contrata hablando con el equipo.</li>
         <li>El cobro es <b>débito automático con Mercado Pago</b> (crédito, débito, prepaga o dinero en cuenta). Los primeros 7 días son gratis.</li>
         <li>Cambiás de plan cuando quieras desde Ajustes → Suscripción (el monto nuevo rige desde el próximo ciclo). También podés <b>cancelar</b> ahí: seguís usando la app hasta el final del período ya pagado y tus datos quedan guardados.</li>
       </ul>

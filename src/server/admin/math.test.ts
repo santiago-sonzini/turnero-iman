@@ -9,11 +9,11 @@ describe("admin metrics math", () => {
       { plan: "TURNOS_AUTO", planStatus: "PAST_DUE", count: 1 },
       { plan: "TURNOS", planStatus: "TRIALING", count: 1 },
     ]);
-    expect(result.committedArs).toBe(60_000);
-    expect(result.arrArs).toBe(720_000);
-    expect(result.arpaArs).toBe(20_000);
-    expect(result.atRiskArs).toBe(30_000);
-    expect(result.potentialArs).toBe(15_000);
+    expect(result.committedArs).toBe(75_000);
+    expect(result.arrArs).toBe(900_000);
+    expect(result.arpaArs).toBe(25_000);
+    expect(result.atRiskArs).toBe(35_000);
+    expect(result.potentialArs).toBe(20_000);
   });
 
   it("uses Argentina local boundaries around UTC month rollover", () => {
