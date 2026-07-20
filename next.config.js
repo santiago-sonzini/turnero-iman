@@ -9,10 +9,10 @@ const config = {
   reactStrictMode: true,
   async headers() {
     const scriptSrc = process.env.NODE_ENV === "production"
-      ? "script-src 'self' 'unsafe-inline'"
-      : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+      ? "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com"
+      : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com";
     const securityHeaders = [
-      { key: "Content-Security-Policy", value: `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://www.mercadopago.com https://www.mercadopago.com.ar; object-src 'none'` },
+      { key: "Content-Security-Policy", value: `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://www.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://www.googleadservices.com https://*.googleadservices.com https://googleads.g.doubleclick.net; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://www.mercadopago.com https://www.mercadopago.com.ar; object-src 'none'` },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "X-Frame-Options", value: "DENY" },
