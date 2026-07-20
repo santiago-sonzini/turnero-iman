@@ -8,6 +8,12 @@ import { MagnetLogo } from "./magnet-logo";
 
 type Mode = "signin" | "signup";
 
+declare global {
+  interface Window {
+    gtag_report_conversion?: (url?: string) => boolean;
+  }
+}
+
 export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [showPassword, setShowPassword] = useState(false);
@@ -29,6 +35,7 @@ export function AuthScreen({ initialMode = "signin" }: { initialMode?: Mode }) {
       if (!email.includes("@")) return setError("Ingresá un email válido.");
       if (password.length < 8) return setError("La clave tiene que tener al menos 8 caracteres.");
       if (mode === "signup" && !accepted) return setError("Necesitás aceptar los términos y condiciones para crear tu cuenta.");
+      if (mode === "signup") window.gtag_report_conversion?.();
       const result = mode === "signup"
         ? await signup({ email, password, negocio: String(formData.get("negocio") ?? ""), acepta: accepted })
         : await login({ email, password });
